@@ -41,10 +41,19 @@ class DualCameraManager: NSObject, ObservableObject {
         recordingStateLock.withLock { $0 = newValue }
     }
 
-    // A Sendable wrapper for CMSampleBuffer so we can pass it across @Sendable closures safely in Swift 6
+    // Sendable wrappers for passing media buffers safely across actor boundaries in Swift 6
     private final class SampleBufferBox: @unchecked Sendable {
         let buffer: CMSampleBuffer
         init(_ buffer: CMSampleBuffer) { self.buffer = buffer }
+    }
+
+    private final class PixelBufferBox: @unchecked Sendable {
+        let buffer: CVPixelBuffer
+        let time: CMTime
+        init(_ buffer: CVPixelBuffer, time: CMTime) {
+            self.buffer = buffer
+            self.time = time
+        }
     }
 
 
@@ -80,31 +89,19 @@ class DualCameraManager: NSObject, ObservableObject {
     var frontPreviewLayer: AVCaptureVideoPreviewLayer?
     var backPreviewLayer: AVCaptureVideoPreviewLayer?
 
-    // MARK: - Recording (Protected by writerQueue - all access must be on this queue)
-    nonisolated(unsafe) private var frontAssetWriter: AVAssetWriter?
-    nonisolated(unsafe) private var backAssetWriter: AVAssetWriter?
-    nonisolated(unsafe) private var combinedAssetWriter: AVAssetWriter?
-
-    nonisolated(unsafe) private var frontVideoInput: AVAssetWriterInput?
-    nonisolated(unsafe) private var backVideoInput: AVAssetWriterInput?
-    nonisolated(unsafe) private var combinedVideoInput: AVAssetWriterInput?
-    nonisolated(unsafe) private var combinedAudioInput: AVAssetWriterInput?
-
-    nonisolated(unsafe) private var frontPixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
-    nonisolated(unsafe) private var backPixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
-    nonisolated(unsafe) private var combinedPixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
-
-    // Add new property to track writer configuration readiness
-    nonisolated(unsafe) private var writersConfigured = false
+    // MARK: - Recording (Thread-Safe Actor-Based)
+    // RecordingCoordinator provides thread-safe access to all AVAssetWriter objects
+    nonisolated(unsafe) private var recordingCoordinator: RecordingCoordinator?
 
     // Background task support
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 
-    // URLs accessed from cleanup - nonisolated safe since only used for file deletion
+    // URLs for recording output (nonisolated for access from various contexts)
     nonisolated(unsafe) private var frontOutputURL: URL?
     nonisolated(unsafe) private var backOutputURL: URL?
     nonisolated(unsafe) private var combinedOutputURL: URL?
 
+    // Recording state tracking (nonisolated for access from delegate callbacks)
     nonisolated(unsafe) private var recordingStartTime: CMTime?
     nonisolated(unsafe) private var isWriting = false
     nonisolated(unsafe) private var hasReceivedFirstVideoFrame = false
@@ -1009,15 +1006,11 @@ class DualCameraManager: NSObject, ObservableObject {
         recordingStartTime = nil
         hasReceivedFirstVideoFrame = false
         hasReceivedFirstAudioFrame = false
-        
-        // Reset writersConfigured before setup
-        writersConfigured = false
 
-        // Setup asset writers
+        // Setup asset writers (async with coordinator)
         do {
-            try setupAssetWriters()
+            try await setupAssetWriters()
             print("✅ Asset writers setup complete")
-            writersConfigured = true
         } catch {
             print("❌ Asset writer setup failed: \(error)")
             await MainActor.run {
@@ -1101,120 +1094,32 @@ class DualCameraManager: NSObject, ObservableObject {
         }
     }
 
-    private func setupAssetWriters() throws {
-        // Front camera writer
-        guard let frontURL = frontOutputURL else {
+    private func setupAssetWriters() async throws {
+        // Verify URLs are set
+        guard let frontURL = frontOutputURL,
+              let backURL = backOutputURL,
+              let combinedURL = combinedOutputURL else {
             throw CameraError.outputURLNotSet
         }
 
-        frontAssetWriter = try AVAssetWriter(outputURL: frontURL, fileType: .mov)
-
+        // Get recording parameters
         let dimensions = recordingQuality.dimensions
         let bitRate = recordingQuality.bitRate
 
-        let frontVideoSettings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: dimensions.width,
-            AVVideoHeightKey: dimensions.height,
-            AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: bitRate
-            ]
-        ]
+        // Create the RecordingCoordinator actor
+        let coordinator = RecordingCoordinator()
+        self.recordingCoordinator = coordinator
 
-        frontVideoInput = AVAssetWriterInput(mediaType: .video, outputSettings: frontVideoSettings)
-        frontVideoInput?.expectsMediaDataInRealTime = true
+        // Configure the coordinator (thread-safe setup)
+        try await coordinator.configure(
+            frontURL: frontURL,
+            backURL: backURL,
+            combinedURL: combinedURL,
+            dimensions: (width: dimensions.width, height: dimensions.height),
+            bitRate: bitRate
+        )
 
-        if let frontVideoInput = frontVideoInput,
-           let frontAssetWriter = frontAssetWriter,
-           frontAssetWriter.canAdd(frontVideoInput) {
-            frontAssetWriter.add(frontVideoInput)
-
-            // Set portrait transform
-            frontVideoInput.transform = currentVideoTransform()
-
-            // Create pixel buffer adaptor for front
-            frontPixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
-                assetWriterInput: frontVideoInput,
-                sourcePixelBufferAttributes: [
-                    kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
-                    kCVPixelBufferWidthKey as String: dimensions.width,
-                    kCVPixelBufferHeightKey as String: dimensions.height
-                ]
-            )
-        }
-
-        // Back camera writer
-        guard let backURL = backOutputURL else {
-            throw CameraError.outputURLNotSet
-        }
-
-        backAssetWriter = try AVAssetWriter(outputURL: backURL, fileType: .mov)
-
-        backVideoInput = AVAssetWriterInput(mediaType: .video, outputSettings: frontVideoSettings)
-        backVideoInput?.expectsMediaDataInRealTime = true
-
-        if let backVideoInput = backVideoInput,
-           let backAssetWriter = backAssetWriter,
-           backAssetWriter.canAdd(backVideoInput) {
-            backAssetWriter.add(backVideoInput)
-
-            // Set portrait transform
-            backVideoInput.transform = currentVideoTransform()
-
-            // Create pixel buffer adaptor for back
-            backPixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
-                assetWriterInput: backVideoInput,
-                sourcePixelBufferAttributes: [
-                    kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
-                    kCVPixelBufferWidthKey as String: dimensions.width,
-                    kCVPixelBufferHeightKey as String: dimensions.height
-                ]
-            )
-        }
-
-        // Combined writer (will use back camera video + audio)
-        guard let combinedURL = combinedOutputURL else {
-            throw CameraError.outputURLNotSet
-        }
-
-        combinedAssetWriter = try AVAssetWriter(outputURL: combinedURL, fileType: .mov)
-
-        combinedVideoInput = AVAssetWriterInput(mediaType: .video, outputSettings: frontVideoSettings)
-        combinedVideoInput?.expectsMediaDataInRealTime = true
-
-        let audioSettings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVNumberOfChannelsKey: 2,
-            AVSampleRateKey: 44100.0,
-            AVEncoderBitRateKey: 128000
-        ]
-
-        combinedAudioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
-        combinedAudioInput?.expectsMediaDataInRealTime = true
-
-        if let combinedVideoInput = combinedVideoInput,
-           let combinedAudioInput = combinedAudioInput,
-           let combinedAssetWriter = combinedAssetWriter {
-            if combinedAssetWriter.canAdd(combinedVideoInput) {
-                combinedAssetWriter.add(combinedVideoInput)
-
-                // Set portrait transform
-                combinedVideoInput.transform = currentVideoTransform()
-
-                // Create pixel buffer adaptor for combined (uses back camera frames)
-                combinedPixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
-                    assetWriterInput: combinedVideoInput,
-                    sourcePixelBufferAttributes: [
-                        kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
-                        kCVPixelBufferWidthKey as String: dimensions.width,
-                        kCVPixelBufferHeightKey as String: dimensions.height
-                    ]
-                )
-            }
-            if combinedAssetWriter.canAdd(combinedAudioInput) {
-                combinedAssetWriter.add(combinedAudioInput)
-            }
-        }
+        print("✅ RecordingCoordinator configured and ready")
     }
 
     private func finishWriting() async throws {
@@ -1228,82 +1133,23 @@ class DualCameraManager: NSObject, ObservableObject {
 
         // Ensure cleanup happens even if there's an error
         defer {
-            // Clean up all writer references
-            frontAssetWriter = nil
-            backAssetWriter = nil
-            combinedAssetWriter = nil
-            frontVideoInput = nil
-            backVideoInput = nil
-            combinedVideoInput = nil
-            combinedAudioInput = nil
-
-            frontPixelBufferAdaptor = nil
-            backPixelBufferAdaptor = nil
-            combinedPixelBufferAdaptor = nil
-            
-            writersConfigured = false
-
-            print("✅ All writer references cleaned up")
+            // Clean up coordinator reference
+            recordingCoordinator = nil
+            print("✅ RecordingCoordinator cleaned up")
 
             // End background task
             endBackgroundTask()
         }
 
-        // Use task group for proper error handling
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            // Finish front writer
-            if let writer = frontAssetWriter {
-                if writer.status == .writing {
-                    group.addTask {
-                        try await self.finishWriter(writer)
-                    }
-                } else if writer.status != .completed {
-                    // Cancel if not writing and not completed
-                    writer.cancelWriting()
-                    print("⚠️ Front writer cancelled (status: \(writer.status.rawValue))")
-                }
-            }
-
-            // Finish back writer
-            if let writer = backAssetWriter {
-                if writer.status == .writing {
-                    group.addTask {
-                        try await self.finishWriter(writer)
-                    }
-                } else if writer.status != .completed {
-                    writer.cancelWriting()
-                    print("⚠️ Back writer cancelled (status: \(writer.status.rawValue))")
-                }
-            }
-
-            // Finish combined writer
-            if let writer = combinedAssetWriter {
-                if writer.status == .writing {
-                    group.addTask {
-                        try await self.finishWriter(writer)
-                    }
-                } else if writer.status != .completed {
-                    writer.cancelWriting()
-                    print("⚠️ Combined writer cancelled (status: \(writer.status.rawValue))")
-                }
-            }
-
-            // Wait for all writers to finish
-            try await group.waitForAll()
-            print("✅ All writers finished successfully")
+        // Use the coordinator to finish all writers (thread-safe)
+        guard let coordinator = recordingCoordinator else {
+            print("⚠️ No coordinator to finish")
+            return
         }
-    }
 
-    nonisolated private func finishWriter(_ writer: AVAssetWriter) async throws {
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            writer.finishWriting {
-                cont.resume()
-            }
-        }
-        if writer.status == .failed, let error = writer.error {
-            print("❌ Writer failed during finish: \(error.localizedDescription)")
-            throw error
-        }
+        // Stop writing and finish all writers concurrently
+        let _ = try await coordinator.stopWriting()
+        print("✅ All writers finished successfully via coordinator")
     }
     
     private func ensurePhotosAuthorization() async throws {
@@ -1335,28 +1181,134 @@ class DualCameraManager: NSObject, ObservableObject {
     }
 
     private func saveToPhotosLibrary() async throws {
-        try await ensurePhotosAuthorization()
-        
-        let urls = [
-            (url: frontOutputURL, title: "DualLensPro - Front Camera"),
-            (url: backOutputURL, title: "DualLensPro - Back Camera"),
-            (url: combinedOutputURL, title: "DualLensPro - Combined")
-        ].compactMap { $0.url != nil ? (url: $0.url!, title: $0.title) : nil }
+        print("📸 saveToPhotosLibrary called")
 
-        try await PHPhotoLibrary.shared().performChanges {
-            for item in urls {
-                let creationRequest = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: item.url)
-                creationRequest?.creationDate = Date()
+        do {
+            try await ensurePhotosAuthorization()
+            print("✅ Photos authorization granted")
+        } catch {
+            print("❌ Photos authorization failed: \(error)")
+            throw error
+        }
 
-                // Add metadata
-                // Note: Custom metadata requires additional setup with PHAssetResource
-                // For now, we're setting creation date and the title will be in the filename
-            }
+        // Capture URLs in a Sendable-safe way
+        guard let frontURL = frontOutputURL,
+              let backURL = backOutputURL,
+              let combinedURL = combinedOutputURL else {
+            print("❌ Missing output URLs")
+            throw CameraError.outputURLNotSet
+        }
+
+        print("📸 Saving 3 videos to Photos library...")
+        print("   Front: \(frontURL.lastPathComponent)")
+        print("   Back: \(backURL.lastPathComponent)")
+        print("   Combined: \(combinedURL.lastPathComponent)")
+
+        // Save videos one at a time to avoid Swift 6 concurrency issues
+        do {
+            try await saveVideoToPhotos(url: frontURL, title: "DualLensPro - Front Camera")
+            print("✅ Front video saved")
+
+            try await saveVideoToPhotos(url: backURL, title: "DualLensPro - Back Camera")
+            print("✅ Back video saved")
+
+            try await saveVideoToPhotos(url: combinedURL, title: "DualLensPro - Combined")
+            print("✅ Combined video saved")
+        } catch {
+            print("❌ Error saving video to Photos: \(error)")
+            throw error
         }
 
         // Notify UI to refresh gallery thumbnail
         await MainActor.run {
             NotificationCenter.default.post(name: .init("RefreshGalleryThumbnail"), object: nil)
+        }
+
+        print("✅ All videos saved to Photos library")
+    }
+
+    private func saveVideoToPhotos(url: URL, title: String) async throws {
+        print("🔍 [1] saveVideoToPhotos START for: \(title)")
+
+        // Verify file exists before trying to save
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            print("❌ Video file doesn't exist at: \(url.path)")
+            throw CameraError.failedToSaveToPhotos
+        }
+
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+        print("🔍 [2] File exists at temp location, size: \(fileSize) bytes")
+        print("🔍 [3] Original URL: \(url.path)")
+
+        // ✅ FIX: Copy to Documents directory first (Photos can't access temp files due to sandbox)
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let permanentURL = documentsPath.appendingPathComponent(url.lastPathComponent)
+
+        print("🔍 [4] Documents path: \(documentsPath.path)")
+        print("🔍 [5] Permanent URL: \(permanentURL.path)")
+
+        // Remove existing file if present
+        if FileManager.default.fileExists(atPath: permanentURL.path) {
+            try? FileManager.default.removeItem(at: permanentURL)
+            print("🔍 [6] Removed existing file at Documents")
+        }
+
+        // Copy to Documents
+        do {
+            print("🔍 [7] About to copy to Documents...")
+            try FileManager.default.copyItem(at: url, to: permanentURL)
+            print("🔍 [8] Copy succeeded!")
+        } catch {
+            print("❌ Failed to copy video to Documents: \(error)")
+            throw error
+        }
+
+        print("🔍 [9] About to create continuation...")
+
+        // ✅ TRY: Use performChangesAndWait to avoid async issues
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            print("🔍 [10] Inside continuation closure")
+
+            DispatchQueue.main.async {
+                print("🔍 [11] Inside main queue async block")
+                print("🔍 [12] About to get PHPhotoLibrary.shared()...")
+
+                let photoLibrary = PHPhotoLibrary.shared()
+                print("🔍 [13] Got PHPhotoLibrary instance: \(photoLibrary)")
+
+                print("🔍 [14] About to call performChanges...")
+
+                do {
+                    // Try synchronous version to avoid continuation issues
+                    try photoLibrary.performChangesAndWait {
+                        print("🔍 [15] Inside performChangesAndWait block")
+                        let creationRequest = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: permanentURL)
+                        print("🔍 [16] Creation request: \(String(describing: creationRequest))")
+                        creationRequest?.creationDate = Date()
+                        print("🔍 [17] Set creation date")
+                    }
+
+                    print("🔍 [18] performChangesAndWait completed successfully")
+
+                    // Clean up the Documents copy
+                    try? FileManager.default.removeItem(at: permanentURL)
+                    print("🔍 [19] Cleaned up Documents copy")
+
+                    print("🔍 [20] About to resume continuation (success)")
+                    continuation.resume()
+                    print("🔍 [21] Continuation resumed")
+
+                } catch {
+                    print("🔍 [ERROR] performChangesAndWait threw error: \(error)")
+                    // Clean up the Documents copy
+                    try? FileManager.default.removeItem(at: permanentURL)
+                    print("🔍 [19b] Cleaned up Documents copy after error")
+
+                    print("🔍 [20b] About to resume continuation (error)")
+                    continuation.resume(throwing: error)
+                    print("🔍 [21b] Continuation resumed with error")
+                }
+            }
         }
     }
 
@@ -1532,70 +1484,27 @@ class DualCameraManager: NSObject, ObservableObject {
     // Called on writerQueue - thread-safe access to writer state
     nonisolated private func handleVideoSampleBuffer(_ sampleBuffer: CMSampleBuffer, isFront: Bool, isBack: Bool) {
         // Start writing on first video frame
-        if writersConfigured && !isWriting && !hasReceivedFirstVideoFrame {
+        if !isWriting && !hasReceivedFirstVideoFrame {
             hasReceivedFirstVideoFrame = true
-            print("🎬 Starting writers on first video frame")
+            print("🎬 Starting session on first video frame")
 
             let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
             recordingStartTime = timestamp
 
-            var allWritersStarted = true
-
-            // Start front writer with validation
-            if let writer = frontAssetWriter, writer.status == .unknown {
-                if writer.startWriting() {
-                    writer.startSession(atSourceTime: timestamp)
-                    print("  ✅ Front writer started")
-                } else {
-                    print("❌ Failed to start front writer: \(writer.error?.localizedDescription ?? "unknown")")
-                    allWritersStarted = false
+            // Start the coordinator's writers
+            guard let coordinator = recordingCoordinator else { return }
+            Task {
+                do {
+                    try await coordinator.startWriting(at: timestamp)
+                    isWriting = true
+                    print("✅ Writers started and ready to accept samples")
+                } catch {
+                    print("❌ Failed to start writing: \(error)")
                 }
             }
-
-            // Start back writer with validation
-            if let writer = backAssetWriter, writer.status == .unknown {
-                if writer.startWriting() {
-                    writer.startSession(atSourceTime: timestamp)
-                    print("  ✅ Back writer started")
-                } else {
-                    print("❌ Failed to start back writer: \(writer.error?.localizedDescription ?? "unknown")")
-                    allWritersStarted = false
-                }
-            }
-
-            // Start combined writer with validation
-            if let writer = combinedAssetWriter, writer.status == .unknown {
-                if writer.startWriting() {
-                    writer.startSession(atSourceTime: timestamp)
-                    print("  ✅ Combined writer started")
-                } else {
-                    print("❌ Failed to start combined writer: \(writer.error?.localizedDescription ?? "unknown")")
-                    allWritersStarted = false
-                }
-            }
-
-            if allWritersStarted {
-                isWriting = true
-                print("✅ All writers started successfully")
-            } else {
-                if let w = frontAssetWriter, w.status == .writing { w.cancelWriting() }
-                if let w = backAssetWriter, w.status == .writing { w.cancelWriting() }
-                if let w = combinedAssetWriter, w.status == .writing { w.cancelWriting() }
-                isWriting = false
-                recordingStartTime = nil
-                hasReceivedFirstVideoFrame = false
-                hasReceivedFirstAudioFrame = false
-
-                Task { @MainActor in
-                    recordingState = .idle
-                    errorMessage = "Failed to start recording - check available storage"
-                }
-                return
-            }
+            return // Skip this frame since we're starting
         }
 
-        guard writersConfigured else { return }
-        
         guard isWriting, recordingStartTime != nil else {
             return
         }
@@ -1607,33 +1516,22 @@ class DualCameraManager: NSObject, ObservableObject {
         }
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
 
-        if isFront {
-            if let adaptor = frontPixelBufferAdaptor, let input = frontVideoInput, input.isReadyForMoreMediaData {
-                if !adaptor.append(pixelBuffer, withPresentationTime: pts) {
-                    print("⚠️ Failed to append front pixel buffer")
-                    if let writer = frontAssetWriter, writer.status == .failed {
-                        print("❌ Front writer failed: \(writer.error?.localizedDescription ?? "unknown error")")
-                    }
-                }
-            }
-        } else if isBack {
-            if let adaptor = backPixelBufferAdaptor, let input = backVideoInput, input.isReadyForMoreMediaData {
-                if !adaptor.append(pixelBuffer, withPresentationTime: pts) {
-                    print("⚠️ Failed to append back pixel buffer")
-                    if let writer = backAssetWriter, writer.status == .failed {
-                        print("❌ Back writer failed: \(writer.error?.localizedDescription ?? "unknown error")")
-                    }
-                }
-            }
+        // Use the coordinator to append pixel buffers (thread-safe via actor)
+        guard let coordinator = recordingCoordinator else { return }
 
-            // Also append to combined output (using back camera video)
-            if let adaptor = combinedPixelBufferAdaptor, let input = combinedVideoInput, input.isReadyForMoreMediaData {
-                if !adaptor.append(pixelBuffer, withPresentationTime: pts) {
-                    print("⚠️ Failed to append to combined pixel buffer")
-                    if let writer = combinedAssetWriter, writer.status == .failed {
-                        print("❌ Combined writer failed: \(writer.error?.localizedDescription ?? "unknown error")")
-                    }
+        // Box the pixel buffer for safe transfer across actor boundary
+        let box = PixelBufferBox(pixelBuffer, time: pts)
+
+        Task { [box, isFront, isBack] in
+            do {
+                if isFront {
+                    try await coordinator.appendFrontPixelBuffer(box.buffer, time: box.time)
+                } else if isBack {
+                    // appendBackPixelBuffer also appends to combined writer
+                    try await coordinator.appendBackPixelBuffer(box.buffer, time: box.time)
                 }
+            } catch {
+                print("❌ Error appending pixel buffer: \(error)")
             }
         }
     }
@@ -1694,13 +1592,17 @@ extension DualCameraManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCap
             return
         }
 
-        // Append audio to combined output
-        if let input = combinedAudioInput, input.isReadyForMoreMediaData {
-            if !input.append(sampleBuffer) {
-                print("⚠️ Failed to append audio sample")
-                if let writer = combinedAssetWriter, writer.status == .failed {
-                    print("❌ Combined writer failed: \(writer.error?.localizedDescription ?? "unknown error")")
-                }
+        // Use the coordinator to append audio samples (thread-safe via actor)
+        guard let coordinator = recordingCoordinator else { return }
+
+        // Box the sample buffer for safe transfer across actor boundary
+        let box = SampleBufferBox(sampleBuffer)
+
+        Task { [box] in
+            do {
+                try await coordinator.appendAudioSample(box.buffer)
+            } catch {
+                print("❌ Error appending audio sample: \(error)")
             }
         }
     }
@@ -1724,6 +1626,7 @@ enum CameraError: LocalizedError {
     case photoSaveTimeout
     case insufficientStorage
     case photosNotAuthorized
+    case failedToSaveToPhotos
 
     var errorDescription: String? {
         switch self {
@@ -1759,6 +1662,8 @@ enum CameraError: LocalizedError {
             return "Insufficient storage space available"
         case .photosNotAuthorized:
             return "Photos access is not authorized. Enable access in Settings to save recordings."
+        case .failedToSaveToPhotos:
+            return "Failed to save video to Photos library"
         }
     }
 }

@@ -104,6 +104,21 @@ class CameraViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // ✅ CRITICAL: Observe recordingState changes to update UI
+        cameraManager.$recordingState
+            .receive(on: RunLoop.main)
+            .sink { [weak self] newState in
+                print("🎬 Recording state changed to: \(newState) (isRecording: \(newState.isRecording))")
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
+        // ✅ CRITICAL FIX: Manually sync mode since didSet doesn't fire in init
+        // This ensures cameraManager and configuration are properly initialized
+        configuration.setCaptureMode(.video)
+        cameraManager.setCaptureMode(.video)
+        print("✅ Manually synchronized capture mode to VIDEO")
+
         // NOTE: Do NOT call setupRecordingMonitor() here - it will be called after camera setup
         // Calling async operations in init can cause crashes
     }
@@ -236,11 +251,15 @@ class CameraViewModel: ObservableObject {
 
     // MARK: - Capture Mode Management
     private func handleCaptureModeChange() {
+        print("🎯 handleCaptureModeChange called - new mode: \(currentCaptureMode.rawValue)")
+        print("   isPhotoMode: \(currentCaptureMode.isPhotoMode), isRecordingMode: \(currentCaptureMode.isRecordingMode)")
+
         // Trigger haptic feedback
         HapticManager.shared.modeChange()
 
         // Check if mode requires premium
         if currentCaptureMode.requiresPremium && !isPremium {
+            print("⚠️ Mode \(currentCaptureMode.rawValue) requires premium - reverting to video")
             HapticManager.shared.premiumLocked()
             showPremiumUpgrade = true
             // Revert to previous mode
@@ -250,9 +269,11 @@ class CameraViewModel: ObservableObject {
 
         // Update configuration
         configuration.setCaptureMode(currentCaptureMode)
+        print("✅ Configuration updated to: \(currentCaptureMode.rawValue)")
 
         // Update camera manager mode
         cameraManager.setCaptureMode(currentCaptureMode)
+        print("✅ Camera manager updated to: \(currentCaptureMode.rawValue)")
 
         // Apply mode-specific settings
         switch currentCaptureMode {
@@ -273,6 +294,8 @@ class CameraViewModel: ObservableObject {
         default:
             break
         }
+
+        print("✅ handleCaptureModeChange complete for mode: \(currentCaptureMode.rawValue)")
     }
 
     func setCaptureMode(_ mode: CaptureMode) {
@@ -323,24 +346,33 @@ class CameraViewModel: ObservableObject {
     }
 
     private func startRecording() async throws {
-        print("📹 startRecording() called")
+        print("📹 ========== START RECORDING CALLED ==========")
+        print("📹 Current mode: \(currentCaptureMode.rawValue)")
+        print("📹 isPhotoMode: \(currentCaptureMode.isPhotoMode)")
+        print("📹 isRecordingMode: \(currentCaptureMode.isRecordingMode)")
+        print("📹 canRecord: \(canRecord)")
+        print("📹 isPremium: \(isPremium)")
+        print("📹 isCameraReady: \(isCameraReady)")
+        print("📹 Current isRecording state: \(isRecording)")
 
         // Check if user can record (premium check)
         guard canRecord else {
             print("❌ Cannot record - premium check failed")
             HapticManager.shared.premiumLocked()
             showPremiumUpgrade = true
-            throw RecordingError.recordingLimitReached
+            throw CameraRecordingError.recordingLimitReached
         }
         print("✅ Can record - premium check passed")
 
         // Check that we're in a recording mode
         guard currentCaptureMode.isRecordingMode else {
-            print("❌ Not in recording mode: \(currentCaptureMode)")
+            print("❌ NOT IN RECORDING MODE!")
+            print("   Current mode: \(currentCaptureMode.rawValue)")
+            print("   Expected: video or action")
             HapticManager.shared.error()
-            throw RecordingError.invalidModeForRecording
+            throw CameraRecordingError.invalidModeForRecording
         }
-        print("✅ In recording mode: \(currentCaptureMode)")
+        print("✅ In recording mode: \(currentCaptureMode.rawValue)")
 
         // Trigger haptic feedback
         HapticManager.shared.recordingStart()
@@ -348,6 +380,8 @@ class CameraViewModel: ObservableObject {
         print("📹 About to call cameraManager.startRecording()...")
         try await cameraManager.startRecording()
         print("✅ cameraManager.startRecording() completed")
+        print("📹 New isRecording state: \(isRecording)")
+        print("📹 ========== START RECORDING COMPLETE ==========")
     }
 
     private func stopRecording() async throws {
@@ -642,7 +676,7 @@ class CameraViewModel: ObservableObject {
 }
 
 // MARK: - Recording Error
-enum RecordingError: LocalizedError {
+enum CameraRecordingError: LocalizedError {
     case recordingLimitReached
     case invalidModeForRecording
 
