@@ -1,0 +1,20 @@
+
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCameraUsageDescription</key>
+	<string>DualLens Pro needs access to both cameras to record dual camera videos</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>DualLens Pro needs access to the microphone to record audio with videos</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>DualLens Pro needs access to save your recorded videos to the photo library</string>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchScreenBackground</string>
+		<key>UIImageName</key>
+		<string></string>
+	</dict>
+</dict>
+</plist>

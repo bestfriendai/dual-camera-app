@@ -1,0 +1,23 @@
+{
+  "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Models/CameraConfiguration.swift" : {
+    "const-values" : "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DerivedData/Build/Intermediates.noindex/DualLensPro.build/Debug-iphoneos/DualLensPro.build/Objects-normal/arm64/CameraConfiguration.swiftconstvalues",
+    "dependencies" : "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DerivedData/Build/Intermediates.noindex/DualLensPro.build/Debug-iphoneos/DualLensPro.build/Objects-normal/arm64/CameraConfiguration.d",
+    "diagnostics" : "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DerivedData/Build/Intermediates.noindex/DualLensPro.build/Debug-iphoneos/DualLensPro.build/Objects-normal/arm64/CameraConfiguration.dia",
+    "object" : "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DerivedData/Build/Intermediates.noindex/DualLensPro.build/Debug-iphoneos/DualLensPro.build/Objects-normal/arm64/CameraConfiguration.o",
+    "swift-dependencies" : "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DerivedData/Build/Intermediates.noindex/DualLensPro.build/Debug-iphoneos/DualLensPro.build/Objects-normal/arm64/CameraConfiguration.swiftdeps"
+  },
+  "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Models/CameraPosition.swift" : {
+    "const-values" : "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DerivedData/Build/Intermediates.noindex/DualLensPro.build/Debug-iphoneos/DualLensPro.build/Objects-normal/arm64/CameraPosition.swiftconstvalues",
+    "dependencies" : "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DerivedData/Build/Intermediates.noindex/DualLensPro.build/Debug-iphoneos/DualLensPro.build/Objects-normal/arm64/CameraPosition.d",
+    "diagnostics" : "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DerivedData/Build/Intermediates.noindex/DualLensPro.build/Debug-iphoneos/DualLensPro.build/Objects-normal/arm64/CameraPosition.dia",
+    "object" : "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DerivedData/Build/Intermediates.noindex/DualLensPro.build/Debug-iphoneos/DualLensPro.build/Objects-normal/arm64/CameraPosition.o",
+    "swift-dependencies" : "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DerivedData/Build/Intermediates.noindex/DualLensPro.build/Debug-iphoneos/DualLensPro.build/Objects-normal/arm64/CameraPosition.swiftdeps"
+  },
+  "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/ViewModels/CameraViewModel.swift" : {
+    "const-values" : "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DerivedData/Build/Intermediates.noindex/DualLensPro.build/Debug-iphoneos/DualLensPro.build/Objects-normal/arm64/CameraViewModel.swiftconstvalues",
+    "dependencies" : "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DerivedData/Build/Intermediates.noindex/DualLensPro.build/Debug-iphoneos/DualLensPro.build/Objects-normal/arm64/CameraViewModel.d",
+    "diagnostics" : "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DerivedData/Build/Intermediates.noindex/DualLensPro.build/Debug-iphoneos/DualLensPro.build/Objects-normal/arm64/CameraViewModel.dia",
+    "object" : "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DerivedData/Build/Intermediates.noindex/DualLensPro.build/Debug-iphoneos/DualLensPro.build/Objects-normal/arm64/CameraViewModel.o",
+    "swift-dependencies" : "/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DerivedData/Build/Intermediates.noindex/DualLensPro.build/Debug-iphoneos/DualLensPro.build/Objects-normal/arm64/CameraViewModel.swiftdeps"
+  }
+}
