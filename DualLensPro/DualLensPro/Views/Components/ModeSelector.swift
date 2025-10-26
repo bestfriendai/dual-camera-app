@@ -13,7 +13,7 @@ struct ModeSelector: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: 20) {
                 ForEach(CaptureMode.allCases) { mode in
                     Button(action: {
                         HapticManager.shared.modeChange()
@@ -21,34 +21,36 @@ struct ModeSelector: View {
                             selectedMode = mode
                         }
                     }) {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 6) {
                             Text(mode.displayName.uppercased())
-                                .font(.system(size: 13, weight: selectedMode == mode ? .semibold : .regular))
+                                .font(.system(size: 12, weight: selectedMode == mode ? .bold : .medium))
                                 .foregroundStyle(selectedMode == mode ? .yellow : .white)
-                                .tracking(0.5)
+                                .tracking(0.2)
+                                .lineLimit(1)
+                                .fixedSize()
 
                             // Premium badge
                             if mode.requiresPremium && !isPremium {
                                 Image(systemName: "crown.fill")
-                                    .font(.system(size: 8))
+                                    .font(.system(size: 10))
                                     .foregroundStyle(.yellow)
                             }
                         }
-                        .padding(.horizontal, selectedMode == mode ? 16 : 8)
+                        .padding(.horizontal, selectedMode == mode ? 16 : 10)
                         .padding(.vertical, 8)
                         .background {
                             if selectedMode == mode {
                                 Capsule()
-                                    .fill(.white.opacity(0.15))
+                                    .fill(.white.opacity(0.2))
                             }
                         }
                     }
                     .buttonStyle(PlainButtonStyle())
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 24)
         }
-        .frame(height: 44)
+        .frame(height: 50)
     }
 }
 

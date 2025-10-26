@@ -18,11 +18,20 @@ private struct TopToolbar: View {
             // Flash Button
             Button(action: {
                 HapticManager.shared.light()
-                // Toggle flash (implement flash toggle in view model)
+                viewModel.toggleFlash()
             }) {
-                Image(systemName: "bolt.slash.fill")
+                let iconName: String = {
+                    switch viewModel.flashMode {
+                    case .off: return "bolt.slash.fill"
+                    case .on: return "bolt.fill"
+                    case .auto: return "bolt.badge.automatic.fill"
+                    @unknown default: return "bolt.slash.fill"
+                    }
+                }()
+
+                Image(systemName: iconName)
                     .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(viewModel.flashMode == .off ? .white : .yellow)
                     .frame(width: 40, height: 40)
             }
 
@@ -58,7 +67,7 @@ private struct TopToolbar: View {
                 .background(.white.opacity(0.3))
                 .frame(height: 20)
 
-            // Grid/More Button
+            // Grid Button
             Button(action: {
                 HapticManager.shared.light()
                 viewModel.toggleGrid()
@@ -66,6 +75,21 @@ private struct TopToolbar: View {
                 Image(systemName: viewModel.showGrid ? "circle.grid.3x3.fill" : "circle.grid.3x3")
                     .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(viewModel.showGrid ? .yellow : .white)
+                    .frame(width: 40, height: 40)
+            }
+
+            Divider()
+                .background(.white.opacity(0.3))
+                .frame(height: 20)
+
+            // Settings Button
+            Button(action: {
+                HapticManager.shared.light()
+                viewModel.showSettings = true
+            }) {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(.white)
                     .frame(width: 40, height: 40)
             }
         }
@@ -130,14 +154,14 @@ struct DualCameraView: View {
                         .frame(height: geometry.size.height * 0.5)
                         .overlay(alignment: .topLeading) {
                             CameraLabel(text: "Back", zoom: viewModel.configuration.backZoomFactor)
-                                .padding(.top, 8)
-                                .padding(.leading, 12)
+                                .padding(.top, max(geometry.safeAreaInsets.top + 70, 80))
+                                .padding(.leading, 20)
                         }
                         .overlay(alignment: .topTrailing) {
                             if viewModel.isRecording {
                                 RecordingIndicator(duration: viewModel.recordingDuration)
-                                    .padding(.top, 8)
-                                    .padding(.trailing, 12)
+                                    .padding(.top, max(geometry.safeAreaInsets.top + 70, 80))
+                                    .padding(.trailing, 20)
                             }
                         }
 
@@ -165,8 +189,8 @@ struct DualCameraView: View {
                         .frame(height: geometry.size.height * 0.5)
                         .overlay(alignment: .bottomLeading) {
                             CameraLabel(text: "Front", zoom: viewModel.configuration.frontZoomFactor)
-                                .padding(.bottom, 8)
-                                .padding(.leading, 12)
+                                .padding(.bottom, 24)
+                                .padding(.leading, 20)
                         }
                     }
                 } else {
@@ -204,8 +228,8 @@ struct DualCameraView: View {
                     .overlay(alignment: .topTrailing) {
                         if viewModel.isRecording {
                             RecordingIndicator(duration: viewModel.recordingDuration)
-                                .padding(.top, 8)
-                                .padding(.trailing, 12)
+                                .padding(.top, max(geometry.safeAreaInsets.top + 50, 60))
+                                .padding(.trailing, 16)
                         }
                     }
                 }
@@ -217,10 +241,10 @@ struct DualCameraView: View {
                         HStack {
                             Spacer()
 
-                            // Top Toolbar (right side)
+                            // Top Toolbar (right side) - with Dynamic Island clearance
                             TopToolbar()
-                                .padding(.top, 8)
-                                .padding(.trailing, 12)
+                                .padding(.top, max(geometry.safeAreaInsets.top + 70, 80))
+                                .padding(.trailing, 20)
                         }
 
                         // Timer Display - only show when recording
@@ -231,7 +255,7 @@ struct DualCameraView: View {
                         Spacer()
                     }
 
-                    // Zoom Control - Above bottom controls
+                    // Zoom Control - Positioned dynamically to avoid overlap
                     VStack {
                         Spacer()
 
@@ -242,7 +266,7 @@ struct DualCameraView: View {
                                 viewModel.updateBackZoom(factor)
                             }
                         )
-                        .padding(.bottom, 12)
+                        .padding(.bottom, calculateZoomControlPadding(geometry))
                     }
 
                     // Controls Overlay
@@ -271,11 +295,42 @@ struct DualCameraView: View {
                         .transition(.opacity)
                         .zIndex(100)
                     }
+
+                    // Success Toast
+                    if viewModel.showSaveSuccessToast {
+                        VStack {
+                            Spacer()
+                            HStack(spacing: 12) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundStyle(.green)
+
+                                Text(viewModel.saveSuccessMessage)
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(.white)
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 14)
+                            .background {
+                                Capsule()
+                                    .fill(.ultraThinMaterial)
+                                    .overlay {
+                                        Capsule()
+                                            .fill(.black.opacity(0.3))
+                                    }
+                            }
+                            .shadow(color: .black.opacity(0.3), radius: 15, y: 5)
+                            .padding(.bottom, max(geometry.safeAreaInsets.bottom, 16) + 140)
+                        }
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .zIndex(99)
+                    }
                 }
             }
             .onTapGesture {
                 viewModel.toggleControlsVisibility()
             }
+            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: viewModel.showSaveSuccessToast)
             .sheet(isPresented: $viewModel.showSettings) {
                 SettingsView(viewModel: viewModel)
             }
@@ -285,6 +340,15 @@ struct DualCameraView: View {
             }
         }
         .ignoresSafeArea()
+    }
+
+    // Calculate zoom control padding to prevent overlap with bottom controls
+    private func calculateZoomControlPadding(_ geometry: GeometryProxy) -> CGFloat {
+        // ModeSelector height: ~44pt
+        // Bottom controls height: ~76pt (button container)
+        // Bottom padding: safeArea + 16 + 16
+        let controlPanelHeight: CGFloat = 44 + 76 + max(geometry.safeAreaInsets.bottom, 16) + 32
+        return controlPanelHeight + 8 // 8pt gap between zoom and controls
     }
 }
 

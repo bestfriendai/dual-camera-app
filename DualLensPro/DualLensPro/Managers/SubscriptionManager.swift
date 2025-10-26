@@ -35,6 +35,10 @@ class SubscriptionManager: ObservableObject {
     // MARK: - Initialization
     init() {
         loadSubscriptionStatus()
+        // IMPORTANT: Reset recording duration on app launch
+        // This ensures users can record even if previous session hit the limit or crashed
+        resetRecordingDuration()
+        print("📱 SubscriptionManager initialized - isPremium: \(isPremium), canRecord: \(canRecord)")
     }
 
     // MARK: - Subscription Status

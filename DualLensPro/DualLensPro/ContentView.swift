@@ -62,12 +62,12 @@ struct ContentView: View {
                         .font(.caption2)
                         .foregroundStyle(.yellow)
 
-                    if !cameraViewModel.errorMessage.isEmpty {
+                    if let errorMsg = cameraViewModel.errorMessage, !errorMsg.isEmpty {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("ERROR:")
                                 .font(.caption2.bold())
                                 .foregroundStyle(.red)
-                            Text(cameraViewModel.errorMessage)
+                            Text(errorMsg)
                                 .font(.caption2)
                                 .foregroundStyle(.red)
                                 .multilineTextAlignment(.leading)
@@ -88,9 +88,9 @@ struct ContentView: View {
                     .padding(.top, 4)
 
                     // Show error in PermissionView too
-                    if !cameraViewModel.errorMessage.isEmpty {
+                    if let errorMsg = cameraViewModel.errorMessage, !errorMsg.isEmpty {
                         Button("View Full Error") {
-                            print("Full error: \(cameraViewModel.errorMessage)")
+                            print("Full error: \(errorMsg)")
                         }
                         .font(.caption2)
                         .foregroundStyle(.orange)

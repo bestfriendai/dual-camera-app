@@ -12,11 +12,19 @@ struct ControlPanel: View {
     @EnvironmentObject var viewModel: CameraViewModel
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
+    // Get safe area bottom for proper padding
+    private var safeAreaBottom: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }?
+            .safeAreaInsets.bottom ?? 0
+    }
+
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 28) {
             // Mode Selector - matching screenshot
             ModeSelector(selectedMode: $viewModel.currentCaptureMode)
-                .padding(.bottom, 4)
 
             // Bottom Control Bar - matching Apple Camera layout
             HStack(spacing: 0) {
@@ -30,9 +38,26 @@ struct ControlPanel: View {
 
                 // Record Button (Center - Large)
                 RecordButton(isRecording: viewModel.isRecording) {
-                    if viewModel.currentCaptureMode == .photo || viewModel.currentCaptureMode == .groupPhoto {
+                    print("🔘 Record button tapped - mode: \(viewModel.currentCaptureMode)")
+                    print("🔘 isPhotoMode: \(viewModel.currentCaptureMode.isPhotoMode)")
+                    print("🔘 isRecordingMode: \(viewModel.currentCaptureMode.isRecordingMode)")
+                    print("🔘 isCameraReady: \(viewModel.isCameraReady)")
+
+                    // Safety check - camera must be ready
+                    guard viewModel.isCameraReady else {
+                        print("❌ Camera not ready - ignoring button tap")
+                        return
+                    }
+
+                    // Use the mode's properties instead of hardcoded checks
+                    if viewModel.currentCaptureMode.isPhotoMode {
+                        print("📸 Calling capturePhoto()")
                         viewModel.capturePhoto()
+                    } else if viewModel.currentCaptureMode.isRecordingMode {
+                        print("🎥 Calling toggleRecording()")
+                        viewModel.toggleRecording()
                     } else {
+                        print("⚠️ Unknown mode - defaulting to toggleRecording()")
                         viewModel.toggleRecording()
                     }
                 }
@@ -54,8 +79,8 @@ struct ControlPanel: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 32)
+        .padding(.horizontal, 20)
+        .padding(.bottom, max(safeAreaBottom, 24) + 32)
     }
 }
 

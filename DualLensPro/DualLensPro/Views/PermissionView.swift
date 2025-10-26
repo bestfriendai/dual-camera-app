@@ -8,6 +8,7 @@
 
 import SwiftUI
 import AVFoundation
+import Photos
 
 struct PermissionView: View {
     @Binding var showAlert: Bool
@@ -138,9 +139,20 @@ struct PermissionView: View {
     private func checkCurrentStatus() {
         let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
         let audioStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        let photoStatus = PHPhotoLibrary.authorizationStatus(for: .addOnly)
 
-        debugInfo = "Camera: \(statusString(cameraStatus))\nMicrophone: \(statusString(audioStatus))"
-        print("📊 Current status - Camera: \(statusString(cameraStatus)), Mic: \(statusString(audioStatus))")
+        debugInfo = "Camera: \(statusString(cameraStatus))\nMicrophone: \(statusString(audioStatus))\nPhotos: \(statusString(photoStatus))"
+        print("📊 Current status - Camera: \(statusString(cameraStatus)), Mic: \(statusString(audioStatus)), Photos: \(statusString(photoStatus))")
+    }
+
+    private func statusString(_ status: PHAuthorizationStatus) -> String {
+        switch status {
+        case .authorized, .limited: return "Authorized"
+        case .denied: return "DENIED"
+        case .notDetermined: return "Not Asked"
+        case .restricted: return "Restricted"
+        @unknown default: return "Unknown"
+        }
     }
 
     private func statusString(_ status: AVAuthorizationStatus) -> String {
@@ -158,12 +170,13 @@ struct PermissionView: View {
 
         let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
         let audioStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        let photoStatus = PHPhotoLibrary.authorizationStatus(for: .addOnly)
 
-        print("📊 Before request - Camera: \(statusString(cameraStatus)), Mic: \(statusString(audioStatus))")
+        print("📊 Before request - Camera: \(statusString(cameraStatus)), Mic: \(statusString(audioStatus)), Photos: \(statusString(photoStatus))")
 
         // If already authorized, trigger camera initialization directly
-        if cameraStatus == .authorized && audioStatus == .authorized {
-            print("✅ Permissions already granted - triggering camera initialization via notification")
+        if cameraStatus == .authorized && audioStatus == .authorized && (photoStatus == .authorized || photoStatus == .limited) {
+            print("✅ All permissions already granted - triggering camera initialization via notification")
             debugInfo = "Permissions already granted! Initializing camera..."
 
             // Post notification to trigger camera initialization in ContentView
@@ -172,7 +185,7 @@ struct PermissionView: View {
         }
 
         // If already denied, must go to Settings
-        if cameraStatus == .denied || audioStatus == .denied {
+        if cameraStatus == .denied || audioStatus == .denied || photoStatus == .denied {
             print("⚠️ Permissions already denied - must use Settings")
             debugInfo = "Permissions denied. Please enable in Settings."
             showAlert = true
@@ -193,20 +206,26 @@ struct PermissionView: View {
             let audioGranted = await AVCaptureDevice.requestAccess(for: .audio)
             print("🎤 Microphone access: \(audioGranted ? "✅ GRANTED" : "❌ DENIED")")
 
+            // Request photo library permission
+            print("📸 Requesting photo library access...")
+            let photoStatus = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            let photoGranted = (photoStatus == .authorized || photoStatus == .limited)
+            print("📸 Photo library access: \(photoGranted ? "✅ GRANTED" : "❌ DENIED")")
+
             await MainActor.run {
                 isRequesting = false
                 print("🔐 Permission request complete")
 
                 checkCurrentStatus()
 
-                // If either permission was denied, show alert to go to Settings
-                if !cameraGranted || !audioGranted {
+                // If any permission was denied, show alert to go to Settings
+                if !cameraGranted || !audioGranted || !photoGranted {
                     print("⚠️ Showing settings alert")
                     debugInfo = "Permissions denied. Please enable in Settings."
                     showAlert = true
                 } else {
                     print("✅ All permissions granted - ContentView should detect this")
-                    debugInfo = "Permissions granted!"
+                    debugInfo = "All permissions granted!"
 
                     // Post notification to trigger camera initialization
                     NotificationCenter.default.post(name: .init("ForceCheckAuthorization"), object: nil)

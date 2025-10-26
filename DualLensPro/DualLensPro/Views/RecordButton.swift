@@ -14,7 +14,6 @@ struct RecordButton: View {
 
     @State private var isPressed = false
     @State private var pulseAnimation = false
-    @State private var glowAnimation = false
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
@@ -23,16 +22,25 @@ struct RecordButton: View {
             triggerHaptic()
         }) {
             ZStack {
-                // Outer ring
+                // Recording pulse effect
+                if isRecording {
+                    Circle()
+                        .fill(.red.opacity(0.3))
+                        .frame(width: 72, height: 72)
+                        .scaleEffect(pulseAnimation ? 1.3 : 1.0)
+                        .opacity(pulseAnimation ? 0 : 0.6)
+                }
+
+                // Outer ring with recording color
                 Circle()
-                    .strokeBorder(.white, lineWidth: 3)
+                    .strokeBorder(isRecording ? .red : .white, lineWidth: 3)
                     .frame(width: 72, height: 72)
 
                 // Inner button
                 if isRecording {
-                    // Recording state - rounded square
+                    // Recording state - rounded square with red fill
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(.white)
+                        .fill(.red)
                         .frame(width: 28, height: 28)
                 } else {
                     // Ready state - circle
@@ -51,17 +59,18 @@ struct RecordButton: View {
         )
         .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isPressed)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isRecording)
-    }
-
-    private func startPulseAnimation() {
-        withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-            pulseAnimation = true
+        .onChange(of: isRecording) { _, newValue in
+            if newValue {
+                startPulseAnimation()
+            } else {
+                pulseAnimation = false
+            }
         }
     }
 
-    private func startGlowAnimation() {
+    private func startPulseAnimation() {
         withAnimation(.easeOut(duration: 1.5).repeatForever(autoreverses: false)) {
-            glowAnimation = true
+            pulseAnimation = true
         }
     }
 

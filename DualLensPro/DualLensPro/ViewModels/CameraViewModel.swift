@@ -23,6 +23,8 @@ class CameraViewModel: ObservableObject {
     @Published var showSettings = false
     @Published var showGallery = false
     @Published var showPremiumUpgrade = false
+    @Published var showSaveSuccessToast = false
+    @Published var saveSuccessMessage = ""
 
     // Managers & Services
     @Published var subscriptionManager = SubscriptionManager()
@@ -79,11 +81,10 @@ class CameraViewModel: ObservableObject {
     private var isSettingUpCamera = false // Prevent duplicate setup calls
 
     init() {
-        // Load default capture mode from settings
-        if let modeString = UserDefaults.standard.string(forKey: "settings.defaultCaptureMode"),
-           let mode = CaptureMode(rawValue: modeString) {
-            currentCaptureMode = mode
-        }
+        // FORCE video mode for now to prevent crashes
+        // TODO: Re-enable UserDefaults loading after fixing mode switching
+        currentCaptureMode = .video
+        print("📱 Forced VIDEO mode on init to prevent crashes")
 
         // Check authorization status synchronously to avoid flashing permission view
         let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
@@ -92,6 +93,7 @@ class CameraViewModel: ObservableObject {
 
         print("🔐 Init - Camera: \(cameraStatus.rawValue), Audio: \(audioStatus.rawValue)")
         print("🔐 Init - isAuthorized set to: \(self.isAuthorized)")
+        print("🔐 Init - currentCaptureMode: \(currentCaptureMode), isPhotoMode: \(currentCaptureMode.isPhotoMode), isRecordingMode: \(currentCaptureMode.isRecordingMode)")
 
         // Bridge manager errors to VM so UI can display them
         cameraManager.$errorMessage
@@ -179,14 +181,22 @@ class CameraViewModel: ObservableObject {
             cameraManager.startSession()
             print("✅ setupCamera - Session started")
 
-            // Wait a moment for session to actually start and preview layers to be ready
-            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+            // Wait for session to actually start using proper state checking
+            var attempts = 0
+            while !cameraManager.isSessionRunning && attempts < 20 {
+                try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+                attempts += 1
+            }
 
-            print("🎥 Session running after start: \(cameraManager.isSessionRunning)")
+            print("🎥 Session running after \(attempts * 50)ms: \(cameraManager.isSessionRunning)")
+
+            // Wait a tiny bit for preview layers to render first frame
+            // This is needed because session.isRunning = true doesn't mean frames are rendering yet
+            try? await Task.sleep(nanoseconds: 200_000_000) // 200ms for preview to start
 
             // Mark camera as ready for UI
             self.isCameraReady = true
-            print("✅ Camera ready flag set to true")
+            print("✅ Camera ready flag set to true (total time: ~\((attempts * 50) + 200)ms)")
 
             // NOW it's safe to start the recording monitor after camera is fully set up
             if recordingMonitorTask == nil {
@@ -291,37 +301,53 @@ class CameraViewModel: ObservableObject {
 
     // MARK: - Recording Control
     func toggleRecording() {
+        print("🎬 toggleRecording called - current isRecording: \(isRecording)")
+        print("🎬 currentCaptureMode: \(currentCaptureMode)")
+        print("🎬 canRecord: \(canRecord)")
+        print("🎬 isRecordingMode: \(currentCaptureMode.isRecordingMode)")
+
         Task {
             do {
                 if isRecording {
+                    print("🛑 Calling stopRecording...")
                     try await stopRecording()
                 } else {
+                    print("▶️ Calling startRecording...")
                     try await startRecording()
                 }
             } catch {
+                print("❌ Recording error: \(error.localizedDescription)")
                 setError(error.localizedDescription)
             }
         }
     }
 
     private func startRecording() async throws {
+        print("📹 startRecording() called")
+
         // Check if user can record (premium check)
         guard canRecord else {
+            print("❌ Cannot record - premium check failed")
             HapticManager.shared.premiumLocked()
             showPremiumUpgrade = true
             throw RecordingError.recordingLimitReached
         }
+        print("✅ Can record - premium check passed")
 
         // Check that we're in a recording mode
         guard currentCaptureMode.isRecordingMode else {
+            print("❌ Not in recording mode: \(currentCaptureMode)")
             HapticManager.shared.error()
             throw RecordingError.invalidModeForRecording
         }
+        print("✅ In recording mode: \(currentCaptureMode)")
 
         // Trigger haptic feedback
         HapticManager.shared.recordingStart()
 
+        print("📹 About to call cameraManager.startRecording()...")
         try await cameraManager.startRecording()
+        print("✅ cameraManager.startRecording() completed")
     }
 
     private func stopRecording() async throws {
@@ -333,34 +359,63 @@ class CameraViewModel: ObservableObject {
 
         // Success haptic
         HapticManager.shared.success()
+
+        // Show success toast
+        saveSuccessMessage = "Videos saved to library"
+        showSaveSuccessToast = true
+
+        // Auto-hide after 2 seconds
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            showSaveSuccessToast = false
+        }
     }
 
     // MARK: - Photo Capture
     func capturePhoto() {
+        print("📸 capturePhoto() called")
+        print("📸 currentCaptureMode: \(currentCaptureMode)")
+        print("📸 isPhotoMode: \(currentCaptureMode.isPhotoMode)")
+        print("📸 isCameraReady: \(isCameraReady)")
+
         Task {
             do {
+                // Check that camera is ready
+                guard isCameraReady else {
+                    print("❌ Camera not ready yet")
+                    HapticManager.shared.error()
+                    setError("Camera is still initializing. Please wait...")
+                    return
+                }
+
                 // Check that we're in a photo mode
                 guard currentCaptureMode.isPhotoMode else {
+                    print("❌ Not in photo mode: \(currentCaptureMode)")
                     HapticManager.shared.error()
                     setError("Switch to PHOTO or GROUP PHOTO mode to capture photos")
                     return
                 }
 
+                print("✅ Starting photo capture...")
                 // If timer is set, show countdown
                 if timerDuration > 0 {
+                    print("⏱️ Timer set to \(timerDuration) seconds")
                     await MainActor.run {
                         timerCountdownDuration = timerDuration
                         showTimerCountdown = true
                     }
                 } else {
                     // Immediate capture with haptic
+                    print("📸 Immediate capture (no timer)")
                     HapticManager.shared.photoCapture()
                     try await cameraManager.capturePhoto()
                     HapticManager.shared.success()
+                    print("✅ Photo captured successfully")
                 }
             } catch {
+                print("❌ Photo capture error: \(error)")
                 HapticManager.shared.error()
-                setError(error.localizedDescription)
+                setError("Photo capture failed: \(error.localizedDescription)")
             }
         }
     }
@@ -371,6 +426,14 @@ class CameraViewModel: ObservableObject {
                 HapticManager.shared.photoCapture()
                 try await cameraManager.capturePhoto()
                 HapticManager.shared.success()
+
+                // Show success toast
+                saveSuccessMessage = "Photos saved to library"
+                showSaveSuccessToast = true
+
+                // Auto-hide after 2 seconds
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                showSaveSuccessToast = false
             } catch {
                 HapticManager.shared.error()
                 setError(error.localizedDescription)

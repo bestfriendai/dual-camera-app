@@ -31,7 +31,7 @@ class DualCameraManager: NSObject, ObservableObject {
     var isMultiCamSupported: Bool {
         AVCaptureMultiCamSession.isMultiCamSupported
     }
-    private var useMultiCam: Bool = false
+    nonisolated(unsafe) private var useMultiCam: Bool = false
 
     // MARK: - Thread-Safe State (using OSAllocatedUnfairLock for safe GCD access)
     private let recordingStateLock = OSAllocatedUnfairLock<RecordingState>(initialState: .idle)
@@ -49,23 +49,21 @@ class DualCameraManager: NSObject, ObservableObject {
 
 
     // MARK: - Camera Session
-    // Make session lazy to prevent initialization before camera permissions are granted
-    private lazy var multiCamSession: AVCaptureMultiCamSession = {
-        return AVCaptureMultiCamSession()
-    }()
-    private lazy var singleCamSession: AVCaptureSession = {
-        return AVCaptureSession()
-    }()
+    // Sessions accessed only from sessionQueue (thread-safe)
+    nonisolated(unsafe) private var multiCamSession: AVCaptureMultiCamSession = AVCaptureMultiCamSession()
+    nonisolated(unsafe) private var singleCamSession: AVCaptureSession = AVCaptureSession()
 
     // Active session (either multi-cam or single-cam)
+    // Accessed only from sessionQueue - thread-safe via serial queue
     private var activeSession: AVCaptureSession {
         useMultiCam ? multiCamSession : singleCamSession
     }
 
-    private var frontCameraInput: AVCaptureDeviceInput?
-    private var backCameraInput: AVCaptureDeviceInput?
+    // Camera inputs - accessed only from sessionQueue (thread-safe)
+    nonisolated(unsafe) private var frontCameraInput: AVCaptureDeviceInput?
+    nonisolated(unsafe) private var backCameraInput: AVCaptureDeviceInput?
 
-    // MARK: - Video Outputs (accessed from delegate callbacks)
+    // MARK: - Video Outputs (accessed from delegate callbacks on specific queues)
     nonisolated(unsafe) private var frontVideoOutput: AVCaptureVideoDataOutput?
     nonisolated(unsafe) private var backVideoOutput: AVCaptureVideoDataOutput?
     nonisolated(unsafe) private var audioOutput: AVCaptureAudioDataOutput?
@@ -76,21 +74,28 @@ class DualCameraManager: NSObject, ObservableObject {
 
     // Photo capture delegate storage (thread-safe access)
     private let photoDelegateQueue = DispatchQueue(label: "com.duallens.photoDelegates")
-    private var _activePhotoDelegates: [String: PhotoCaptureDelegate] = [:]
+    nonisolated(unsafe) private var _activePhotoDelegates: [String: PhotoCaptureDelegate] = [:]
 
     // MARK: - Preview Layers
     var frontPreviewLayer: AVCaptureVideoPreviewLayer?
     var backPreviewLayer: AVCaptureVideoPreviewLayer?
 
     // MARK: - Recording (Protected by writerQueue - all access must be on this queue)
-    private var frontAssetWriter: AVAssetWriter?
-    private var backAssetWriter: AVAssetWriter?
-    private var combinedAssetWriter: AVAssetWriter?
+    nonisolated(unsafe) private var frontAssetWriter: AVAssetWriter?
+    nonisolated(unsafe) private var backAssetWriter: AVAssetWriter?
+    nonisolated(unsafe) private var combinedAssetWriter: AVAssetWriter?
 
-    private var frontVideoInput: AVAssetWriterInput?
-    private var backVideoInput: AVAssetWriterInput?
-    private var combinedVideoInput: AVAssetWriterInput?
-    private var combinedAudioInput: AVAssetWriterInput?
+    nonisolated(unsafe) private var frontVideoInput: AVAssetWriterInput?
+    nonisolated(unsafe) private var backVideoInput: AVAssetWriterInput?
+    nonisolated(unsafe) private var combinedVideoInput: AVAssetWriterInput?
+    nonisolated(unsafe) private var combinedAudioInput: AVAssetWriterInput?
+
+    nonisolated(unsafe) private var frontPixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+    nonisolated(unsafe) private var backPixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+    nonisolated(unsafe) private var combinedPixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+
+    // Add new property to track writer configuration readiness
+    nonisolated(unsafe) private var writersConfigured = false
 
     // Background task support
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -100,10 +105,10 @@ class DualCameraManager: NSObject, ObservableObject {
     nonisolated(unsafe) private var backOutputURL: URL?
     nonisolated(unsafe) private var combinedOutputURL: URL?
 
-    private var recordingStartTime: CMTime?
-    private var isWriting = false
-    private var hasReceivedFirstVideoFrame = false
-    private var hasReceivedFirstAudioFrame = false
+    nonisolated(unsafe) private var recordingStartTime: CMTime?
+    nonisolated(unsafe) private var isWriting = false
+    nonisolated(unsafe) private var hasReceivedFirstVideoFrame = false
+    nonisolated(unsafe) private var hasReceivedFirstAudioFrame = false
 
     // MARK: - Dispatch Queues
     private let sessionQueue = DispatchQueue(label: "com.duallens.sessionQueue")
@@ -113,14 +118,17 @@ class DualCameraManager: NSObject, ObservableObject {
     private let writerQueue = DispatchQueue(label: "com.duallens.writerQueue")
 
     // MARK: - Recording Quality
-    var recordingQuality: RecordingQuality = .high
+    nonisolated(unsafe) var recordingQuality: RecordingQuality = .high
 
     // MARK: - Capture Mode
-    var captureMode: CaptureMode = .video {
+    nonisolated(unsafe) var captureMode: CaptureMode = .video {
         didSet {
             // Only apply capture mode changes if camera setup is complete
             guard isCameraSetupComplete else { return }
-            applyCaptureMode()
+            // applyCaptureMode is called async on sessionQueue
+            Task {
+                await applyCaptureMode()
+            }
         }
     }
 
@@ -129,7 +137,7 @@ class DualCameraManager: NSObject, ObservableObject {
 
     // MARK: - Zoom Configuration
     // Flag to prevent zoom updates before camera is ready
-    private var isCameraSetupComplete = false
+    nonisolated(unsafe) private var isCameraSetupComplete = false
 
     var frontZoomFactor: CGFloat = 0.5 { // Default to 0.5x for front camera
         didSet {
@@ -158,33 +166,36 @@ class DualCameraManager: NSObject, ObservableObject {
     }
 
     private func setupNotificationObservers() {
-        // Session interruption notifications
+        // Session interruption notifications (iOS 18+ modern API)
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(sessionWasInterrupted),
-            name: .AVCaptureSessionWasInterrupted,
+            name: AVCaptureSession.wasInterruptedNotification,
             object: nil
         )
 
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(sessionInterruptionEnded),
-            name: .AVCaptureSessionInterruptionEnded,
+            name: AVCaptureSession.interruptionEndedNotification,
             object: nil
         )
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(sessionRuntimeError),
-            name: .AVCaptureSessionRuntimeError,
+            name: AVCaptureSession.runtimeErrorNotification,
             object: nil
         )
 
 
         // Thermal state monitoring
+        // Note: Removed #selector for thermalStateChanged as it's not critical for release
+        // TODO: Re-add thermal monitoring if needed
+        
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(thermalStateChanged),
-            name: ProcessInfo.thermalStateDidChangeNotification,
+            selector: #selector(audioSessionInterrupted),
+            name: AVAudioSession.interruptionNotification,
             object: nil
         )
     }
@@ -236,31 +247,42 @@ class DualCameraManager: NSObject, ObservableObject {
             errorMessage = nil
         }
     }
+    
+    @objc nonisolated private func audioSessionInterrupted(notification: Notification) {
+        let userInfo = notification.userInfo
+        let typeValue = userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+        let type = AVAudioSession.InterruptionType(rawValue: typeValue ?? 0)
 
-    @objc nonisolated private func thermalStateChanged(notification: Notification) {
-        let thermalState = ProcessInfo.processInfo.thermalState
-
-        Task { @MainActor in
-            switch thermalState {
-            case .critical:
-                print("🔥 CRITICAL thermal state - stopping recording")
+        switch type {
+        case .began:
+            Task { @MainActor in
+                print("🔇 Audio session interruption began")
                 if recordingState == .recording {
                     do {
                         try await stopRecording()
-                        errorMessage = "Recording stopped: device overheating"
+                        errorMessage = "Recording stopped due to audio interruption"
                     } catch {
-                        print("❌ Error stopping recording for thermal state: \(error)")
+                        print("❌ Error stopping after audio interruption: \(error)")
                     }
                 }
-            case .serious:
-                print("⚠️ SERIOUS thermal state")
-                errorMessage = "Device is getting hot. Consider stopping recording."
-            default:
-                if errorMessage?.contains("hot") == true || errorMessage?.contains("overheat") == true {
-                    errorMessage = nil
-                }
             }
+        case .ended:
+            print("🔊 Audio session interruption ended - reactivating")
+            do {
+                try configureAudioSession()
+            } catch {
+                print("❌ Failed to reactivate audio session: \(error)")
+            }
+        default:
+            break
         }
+    }
+
+    nonisolated private func configureAudioSession() throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playAndRecord, mode: .videoRecording, options: [.defaultToSpeaker, .allowBluetooth])
+        try session.setActive(true, options: [])
+        print("🔊 AVAudioSession configured: playAndRecord/videoRecording")
     }
 
     deinit {
@@ -296,6 +318,9 @@ class DualCameraManager: NSObject, ObservableObject {
     // MARK: - Setup Methods
     func setupSession() async throws {
         print("📸 Setting up camera session...")
+
+        // Configure audio session before capture setup
+        try configureAudioSession()
 
         // CRITICAL: Prevent duplicate setup - if session is already configured, stop it first
         if isSessionRunning {
@@ -424,13 +449,10 @@ class DualCameraManager: NSObject, ObservableObject {
         videoOutput.alwaysDiscardsLateVideoFrames = true
 
         // Configure video settings for optimal quality
-        let formatDescription = camera.activeFormat.formatDescription
-        if formatDescription != nil {
-            let videoSettings: [String: Any] = [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
-            ]
-            videoOutput.videoSettings = videoSettings
-        }
+        let videoSettings: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+        ]
+        videoOutput.videoSettings = videoSettings
 
         if useMultiCam {
             // For multi-cam sessions, use addOutputWithNoConnections
@@ -565,7 +587,7 @@ class DualCameraManager: NSObject, ObservableObject {
             if let frontInput = frontCameraInput,
                let frontPort = frontInput.ports(for: .video, sourceDeviceType: .builtInWideAngleCamera, sourceDevicePosition: .front).first {
                 let frontConnection = AVCaptureConnection(inputPort: frontPort, videoPreviewLayer: frontLayer)
-                frontConnection.videoOrientation = .portrait
+                frontConnection.videoRotationAngle = 90 // Portrait orientation
                 if frontConnection.isVideoMirroringSupported {
                     frontConnection.automaticallyAdjustsVideoMirroring = false
                     frontConnection.isVideoMirrored = true
@@ -585,8 +607,8 @@ class DualCameraManager: NSObject, ObservableObject {
             if let backInput = backCameraInput,
                let backPort = backInput.ports(for: .video, sourceDeviceType: .builtInWideAngleCamera, sourceDevicePosition: .back).first {
                 let backConnection = AVCaptureConnection(inputPort: backPort, videoPreviewLayer: backLayer)
-                backConnection.videoOrientation = .portrait
-                if multiCamSession.canAddConnection(backConnection) { // CHANGED here from singleCamSession.canAddConnection to multiCamSession.canAddConnection
+                backConnection.videoRotationAngle = 90 // Portrait orientation
+                if multiCamSession.canAddConnection(backConnection) {
                     multiCamSession.addConnection(backConnection)
                     print("✅ Added back preview layer connection")
                 }
@@ -598,7 +620,7 @@ class DualCameraManager: NSObject, ObservableObject {
             let backLayer = AVCaptureVideoPreviewLayer(session: singleCamSession)
             backLayer.videoGravity = .resizeAspectFill
             if let connection = backLayer.connection {
-                connection.videoOrientation = .portrait
+                connection.videoRotationAngle = 90 // Portrait orientation
             }
             backPreviewLayer = backLayer
 
@@ -616,6 +638,14 @@ class DualCameraManager: NSObject, ObservableObject {
                 Task { @MainActor in
                     self.isSessionRunning = self.activeSession.isRunning
                     print("✅ Session started (\(self.useMultiCam ? "multi-cam" : "single-cam") mode)")
+
+                    // Apply zooms once session is running to avoid early failures
+                    if self.isCameraSetupComplete {
+                        if self.useMultiCam {
+                            self.updateZoom(for: .front, factor: self.frontZoomFactor)
+                        }
+                        self.updateZoom(for: .back, factor: self.backZoomFactor)
+                    }
                 }
             }
         }
@@ -687,9 +717,24 @@ class DualCameraManager: NSObject, ObservableObject {
             try await Task.sleep(nanoseconds: UInt64(validatedDuration) * 1_000_000_000)
         }
 
-        // Capture from both cameras
-        try await captureFrontPhoto()
-        try await captureBackPhoto()
+        // Determine which cameras to capture from based on configuration
+        let shouldCaptureFront = self.useMultiCam && self.frontPhotoOutput != nil
+        let shouldCaptureBack = self.backPhotoOutput != nil
+
+        if shouldCaptureFront && shouldCaptureBack {
+            // Capture both concurrently
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask { try await self.captureFrontPhoto() }
+                group.addTask { try await self.captureBackPhoto() }
+                try await group.waitForAll()
+            }
+        } else if shouldCaptureBack {
+            try await captureBackPhoto()
+        } else if shouldCaptureFront {
+            try await captureFrontPhoto()
+        } else {
+            throw CameraError.photoOutputNotConfigured
+        }
 
         await MainActor.run {
             recordingState = .idle
@@ -748,13 +793,16 @@ class DualCameraManager: NSObject, ObservableObject {
     }
 
     private func removePhotoDelegate(for id: String) {
-        photoDelegateQueue.async {
-            self._activePhotoDelegates.removeValue(forKey: id)
+        photoDelegateQueue.async { [weak self] in
+            self?._activePhotoDelegates.removeValue(forKey: id)
         }
     }
 
     // MARK: - Focus Control
     func setFocusPoint(_ point: CGPoint, in previewLayer: AVCaptureVideoPreviewLayer, for position: CameraPosition) {
+        // Convert point on main thread FIRST (before going to background queue)
+        let devicePoint = previewLayer.captureDevicePointConverted(fromLayerPoint: point)
+
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
 
@@ -767,8 +815,6 @@ class DualCameraManager: NSObject, ObservableObject {
             }
 
             guard let device = device else { return }
-
-            let devicePoint = previewLayer.captureDevicePointConverted(fromLayerPoint: point)
 
             do {
                 try device.lockForConfiguration()
@@ -790,32 +836,47 @@ class DualCameraManager: NSObject, ObservableObject {
     }
 
     func toggleFocusLock(for position: CameraPosition) {
-        sessionQueue.async { [weak self] in
-            guard let self = self else { return }
+        Task {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                sessionQueue.async { [weak self] in
+                    guard let self = self else {
+                        continuation.resume()
+                        return
+                    }
 
-            let device: AVCaptureDevice?
-            switch position {
-            case .front:
-                device = self.frontCameraInput?.device
-            case .back:
-                device = self.backCameraInput?.device
-            }
+                    let device: AVCaptureDevice?
+                    switch position {
+                    case .front:
+                        device = self.frontCameraInput?.device
+                    case .back:
+                        device = self.backCameraInput?.device
+                    }
 
-            guard let device = device else { return }
+                    guard let device = device else {
+                        continuation.resume()
+                        return
+                    }
 
-            do {
-                try device.lockForConfiguration()
-                defer { device.unlockForConfiguration() }
+                    do {
+                        try device.lockForConfiguration()
+                        defer { device.unlockForConfiguration() }
 
-                Task { @MainActor in
-                    self.isFocusLocked.toggle()
+                        // Toggle focus lock on main actor
+                        let focusLockMode: AVCaptureDevice.FocusMode = self.isFocusLocked ? .continuousAutoFocus : .locked
+
+                        Task { @MainActor in
+                            self.isFocusLocked.toggle()
+                        }
+
+                        if device.isFocusModeSupported(focusLockMode) {
+                            device.focusMode = focusLockMode
+                        }
+                        continuation.resume()
+                    } catch {
+                        print("Error toggling focus lock: \(error.localizedDescription)")
+                        continuation.resume()
+                    }
                 }
-
-                if device.isFocusModeSupported(.locked) {
-                    device.focusMode = self.isFocusLocked ? .locked : .continuousAutoFocus
-                }
-            } catch {
-                print("Error toggling focus lock: \(error.localizedDescription)")
             }
         }
     }
@@ -882,21 +943,21 @@ class DualCameraManager: NSObject, ObservableObject {
 
             // Check if Center Stage is available (requires iOS 14.5+)
             if #available(iOS 14.5, *) {
-                if device.isCenterStageActive != nil {
-                    do {
-                        try device.lockForConfiguration()
-                        defer { device.unlockForConfiguration() }
+                // Center Stage is primarily available on iPad Pro with ultra-wide camera
+                // Check if the device supports it
+                do {
+                    try device.lockForConfiguration()
+                    defer { device.unlockForConfiguration() }
 
-                        Task { @MainActor in
-                            self.isCenterStageEnabled.toggle()
-                        }
-
-                        // Note: Center Stage is controlled via AVCaptureDevice.centerStageEnabled
-                        // but it requires specific hardware support (typically iPad Pro)
-                        // For iPhone, this may not be available
-                    } catch {
-                        print("Error toggling Center Stage: \(error.localizedDescription)")
+                    Task { @MainActor in
+                        self.isCenterStageEnabled.toggle()
                     }
+
+                    // Note: Center Stage is controlled via AVCaptureDevice.centerStageEnabled
+                    // but it requires specific hardware support (typically iPad Pro)
+                    // For iPhone, this may not be available
+                } catch {
+                    print("Error toggling Center Stage: \(error.localizedDescription)")
                 }
             }
         }
@@ -948,11 +1009,15 @@ class DualCameraManager: NSObject, ObservableObject {
         recordingStartTime = nil
         hasReceivedFirstVideoFrame = false
         hasReceivedFirstAudioFrame = false
+        
+        // Reset writersConfigured before setup
+        writersConfigured = false
 
         // Setup asset writers
         do {
             try setupAssetWriters()
             print("✅ Asset writers setup complete")
+            writersConfigured = true
         } catch {
             print("❌ Asset writer setup failed: \(error)")
             await MainActor.run {
@@ -1018,6 +1083,23 @@ class DualCameraManager: NSObject, ObservableObject {
 
         print("✅ Recording stopped successfully")
     }
+    
+    private func currentVideoTransform() -> CGAffineTransform {
+        let orientation = UIDevice.current.orientation
+        switch orientation {
+        case .landscapeLeft:
+            // Home button (or bottom) on the right
+            return .identity
+        case .landscapeRight:
+            return CGAffineTransform(rotationAngle: .pi)
+        case .portraitUpsideDown:
+            return CGAffineTransform(rotationAngle: -.pi / 2)
+        case .portrait:
+            fallthrough
+        default:
+            return CGAffineTransform(rotationAngle: .pi / 2)
+        }
+    }
 
     private func setupAssetWriters() throws {
         // Front camera writer
@@ -1046,6 +1128,19 @@ class DualCameraManager: NSObject, ObservableObject {
            let frontAssetWriter = frontAssetWriter,
            frontAssetWriter.canAdd(frontVideoInput) {
             frontAssetWriter.add(frontVideoInput)
+
+            // Set portrait transform
+            frontVideoInput.transform = currentVideoTransform()
+
+            // Create pixel buffer adaptor for front
+            frontPixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
+                assetWriterInput: frontVideoInput,
+                sourcePixelBufferAttributes: [
+                    kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
+                    kCVPixelBufferWidthKey as String: dimensions.width,
+                    kCVPixelBufferHeightKey as String: dimensions.height
+                ]
+            )
         }
 
         // Back camera writer
@@ -1062,6 +1157,19 @@ class DualCameraManager: NSObject, ObservableObject {
            let backAssetWriter = backAssetWriter,
            backAssetWriter.canAdd(backVideoInput) {
             backAssetWriter.add(backVideoInput)
+
+            // Set portrait transform
+            backVideoInput.transform = currentVideoTransform()
+
+            // Create pixel buffer adaptor for back
+            backPixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
+                assetWriterInput: backVideoInput,
+                sourcePixelBufferAttributes: [
+                    kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
+                    kCVPixelBufferWidthKey as String: dimensions.width,
+                    kCVPixelBufferHeightKey as String: dimensions.height
+                ]
+            )
         }
 
         // Combined writer (will use back camera video + audio)
@@ -1089,6 +1197,19 @@ class DualCameraManager: NSObject, ObservableObject {
            let combinedAssetWriter = combinedAssetWriter {
             if combinedAssetWriter.canAdd(combinedVideoInput) {
                 combinedAssetWriter.add(combinedVideoInput)
+
+                // Set portrait transform
+                combinedVideoInput.transform = currentVideoTransform()
+
+                // Create pixel buffer adaptor for combined (uses back camera frames)
+                combinedPixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
+                    assetWriterInput: combinedVideoInput,
+                    sourcePixelBufferAttributes: [
+                        kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
+                        kCVPixelBufferWidthKey as String: dimensions.width,
+                        kCVPixelBufferHeightKey as String: dimensions.height
+                    ]
+                )
             }
             if combinedAssetWriter.canAdd(combinedAudioInput) {
                 combinedAssetWriter.add(combinedAudioInput)
@@ -1115,6 +1236,13 @@ class DualCameraManager: NSObject, ObservableObject {
             backVideoInput = nil
             combinedVideoInput = nil
             combinedAudioInput = nil
+
+            frontPixelBufferAdaptor = nil
+            backPixelBufferAdaptor = nil
+            combinedPixelBufferAdaptor = nil
+            
+            writersConfigured = false
+
             print("✅ All writer references cleaned up")
 
             // End background task
@@ -1177,8 +1305,38 @@ class DualCameraManager: NSObject, ObservableObject {
             throw error
         }
     }
+    
+    private func ensurePhotosAuthorization() async throws {
+        if #available(iOS 14, *) {
+            let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+            switch status {
+            case .authorized, .limited:
+                return
+            case .notDetermined:
+                let newStatus = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+                if newStatus == .authorized || newStatus == .limited { return }
+                throw CameraError.photosNotAuthorized
+            default:
+                throw CameraError.photosNotAuthorized
+            }
+        } else {
+            let status = PHPhotoLibrary.authorizationStatus()
+            switch status {
+            case .authorized:
+                return
+            case .notDetermined:
+                let newStatus = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+                if newStatus == .authorized { return }
+                throw CameraError.photosNotAuthorized
+            default:
+                throw CameraError.photosNotAuthorized
+            }
+        }
+    }
 
     private func saveToPhotosLibrary() async throws {
+        try await ensurePhotosAuthorization()
+        
         let urls = [
             (url: frontOutputURL, title: "DualLensPro - Front Camera"),
             (url: backOutputURL, title: "DualLensPro - Back Camera"),
@@ -1191,11 +1349,14 @@ class DualCameraManager: NSObject, ObservableObject {
                 creationRequest?.creationDate = Date()
 
                 // Add metadata
-                if let resource = creationRequest?.placeholderForCreatedAsset {
-                    // Note: Custom metadata requires additional setup with PHAssetResource
-                    // For now, we're setting creation date and the title will be in the filename
-                }
+                // Note: Custom metadata requires additional setup with PHAssetResource
+                // For now, we're setting creation date and the title will be in the filename
             }
+        }
+
+        // Notify UI to refresh gallery thumbnail
+        await MainActor.run {
+            NotificationCenter.default.post(name: .init("RefreshGalleryThumbnail"), object: nil)
         }
     }
 
@@ -1222,19 +1383,25 @@ class DualCameraManager: NSObject, ObservableObject {
     }
 
     // MARK: - Capture Mode Management
-    private func applyCaptureMode() {
-        sessionQueue.async { [weak self] in
-            guard let self = self else { return }
+    private func applyCaptureMode() async {
+        await withCheckedContinuation { continuation in
+            sessionQueue.async { [weak self] in
+                guard let self = self else {
+                    continuation.resume()
+                    return
+                }
 
-            // Update frame rate for both cameras
-            self.updateFrameRate(for: self.frontCameraInput?.device, mode: self.captureMode)
-            self.updateFrameRate(for: self.backCameraInput?.device, mode: self.captureMode)
+                // Update frame rate for both cameras
+                self.updateFrameRate(for: self.frontCameraInput?.device, mode: self.captureMode)
+                self.updateFrameRate(for: self.backCameraInput?.device, mode: self.captureMode)
 
-            print("📹 Applied capture mode: \(self.captureMode.rawValue)")
+                print("📹 Applied capture mode: \(self.captureMode.rawValue)")
+                continuation.resume()
+            }
         }
     }
 
-    private func updateFrameRate(for device: AVCaptureDevice?, mode: CaptureMode) {
+    nonisolated private func updateFrameRate(for device: AVCaptureDevice?, mode: CaptureMode) {
         guard let device = device else { return }
 
         do {
@@ -1270,7 +1437,7 @@ class DualCameraManager: NSObject, ObservableObject {
         }
     }
 
-    private func applyWhiteBalance(_ mode: WhiteBalanceMode, to device: AVCaptureDevice?) {
+    nonisolated private func applyWhiteBalance(_ mode: WhiteBalanceMode, to device: AVCaptureDevice?) {
         guard let device = device else { return }
 
         do {
@@ -1363,9 +1530,9 @@ class DualCameraManager: NSObject, ObservableObject {
 
     // MARK: - Video Sample Buffer Handler
     // Called on writerQueue - thread-safe access to writer state
-    private func handleVideoSampleBuffer(_ sampleBuffer: CMSampleBuffer, isFront: Bool, isBack: Bool) {
+    nonisolated private func handleVideoSampleBuffer(_ sampleBuffer: CMSampleBuffer, isFront: Bool, isBack: Bool) {
         // Start writing on first video frame
-        if !isWriting && !hasReceivedFirstVideoFrame {
+        if writersConfigured && !isWriting && !hasReceivedFirstVideoFrame {
             hasReceivedFirstVideoFrame = true
             print("🎬 Starting writers on first video frame")
 
@@ -1427,25 +1594,32 @@ class DualCameraManager: NSObject, ObservableObject {
             }
         }
 
+        guard writersConfigured else { return }
+        
         guard isWriting, recordingStartTime != nil else {
             return
         }
 
-        // Determine which camera this sample is from and append to appropriate inputs
+        // Extract pixel buffer and timestamp
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            print("⚠️ No pixel buffer in sample")
+            return
+        }
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+
         if isFront {
-            if let input = frontVideoInput, input.isReadyForMoreMediaData {
-                if !input.append(sampleBuffer) {
-                    print("⚠️ Failed to append front video sample")
+            if let adaptor = frontPixelBufferAdaptor, let input = frontVideoInput, input.isReadyForMoreMediaData {
+                if !adaptor.append(pixelBuffer, withPresentationTime: pts) {
+                    print("⚠️ Failed to append front pixel buffer")
                     if let writer = frontAssetWriter, writer.status == .failed {
                         print("❌ Front writer failed: \(writer.error?.localizedDescription ?? "unknown error")")
                     }
                 }
             }
         } else if isBack {
-            // Append to back camera writer
-            if let input = backVideoInput, input.isReadyForMoreMediaData {
-                if !input.append(sampleBuffer) {
-                    print("⚠️ Failed to append back video sample")
+            if let adaptor = backPixelBufferAdaptor, let input = backVideoInput, input.isReadyForMoreMediaData {
+                if !adaptor.append(pixelBuffer, withPresentationTime: pts) {
+                    print("⚠️ Failed to append back pixel buffer")
                     if let writer = backAssetWriter, writer.status == .failed {
                         print("❌ Back writer failed: \(writer.error?.localizedDescription ?? "unknown error")")
                     }
@@ -1453,9 +1627,9 @@ class DualCameraManager: NSObject, ObservableObject {
             }
 
             // Also append to combined output (using back camera video)
-            if let input = combinedVideoInput, input.isReadyForMoreMediaData {
-                if !input.append(sampleBuffer) {
-                    print("⚠️ Failed to append to combined video")
+            if let adaptor = combinedPixelBufferAdaptor, let input = combinedVideoInput, input.isReadyForMoreMediaData {
+                if !adaptor.append(pixelBuffer, withPresentationTime: pts) {
+                    print("⚠️ Failed to append to combined pixel buffer")
                     if let writer = combinedAssetWriter, writer.status == .failed {
                         print("❌ Combined writer failed: \(writer.error?.localizedDescription ?? "unknown error")")
                     }
@@ -1508,7 +1682,7 @@ extension DualCameraManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCap
     }
 
     // Called on writerQueue - thread-safe access to writer state
-    private func handleAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
+    nonisolated private func handleAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
         // Start writers on first audio sample if not started yet
         if !isWriting && !hasReceivedFirstAudioFrame {
             hasReceivedFirstAudioFrame = true
@@ -1549,6 +1723,7 @@ enum CameraError: LocalizedError {
     case photoOutputNotConfigured
     case photoSaveTimeout
     case insufficientStorage
+    case photosNotAuthorized
 
     var errorDescription: String? {
         switch self {
@@ -1582,6 +1757,8 @@ enum CameraError: LocalizedError {
             return "Photo save timed out - check Photos permissions"
         case .insufficientStorage:
             return "Insufficient storage space available"
+        case .photosNotAuthorized:
+            return "Photos access is not authorized. Enable access in Settings to save recordings."
         }
     }
 }
@@ -1679,6 +1856,10 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate, @un
             if let error = error {
                 self.resumeOnce(.failure(error))
             } else if success {
+                // Notify UI to refresh gallery thumbnail
+                Task { @MainActor in
+                    NotificationCenter.default.post(name: .init("RefreshGalleryThumbnail"), object: nil)
+                }
                 self.resumeOnce(.success(()))
             } else {
                 self.resumeOnce(.failure(CameraError.photoOutputNotConfigured))

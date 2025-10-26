@@ -53,6 +53,10 @@ struct GalleryThumbnail: View {
         .onAppear {
             loadLatestPhoto()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .init("RefreshGalleryThumbnail"))) { _ in
+            print("🔄 Refreshing gallery thumbnail")
+            loadLatestPhoto()
+        }
     }
 
     private func loadLatestPhoto() {
@@ -60,27 +64,37 @@ struct GalleryThumbnail: View {
         fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         fetchOptions.fetchLimit = 1
 
-        let fetchResult = PHAsset.fetchAssets(with: .image, options: fetchOptions)
+        // Fetch all media types (photos and videos) to get the most recent
+        let fetchResult = PHAsset.fetchAssets(with: fetchOptions)
 
-        guard let asset = fetchResult.firstObject else { return }
+        guard let asset = fetchResult.firstObject else {
+            print("⚠️ No assets found in photo library")
+            return
+        }
 
         let imageManager = PHImageManager.default()
         let requestOptions = PHImageRequestOptions()
         requestOptions.isSynchronous = false
         requestOptions.deliveryMode = .opportunistic
+        requestOptions.isNetworkAccessAllowed = true
 
         imageManager.requestImage(
             for: asset,
             targetSize: CGSize(width: 100, height: 100),
             contentMode: .aspectFill,
             options: requestOptions
-        ) { image, _ in
+        ) { image, info in
             if let image = image {
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     self.thumbnailImage = image
                 }
             }
         }
+    }
+
+    // Refresh thumbnail when called externally
+    func refresh() {
+        loadLatestPhoto()
     }
 }
 
