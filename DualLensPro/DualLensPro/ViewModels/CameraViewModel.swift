@@ -162,13 +162,28 @@ class CameraViewModel: ObservableObject {
     }
 
     private func requestPermissions() async {
+        print("🔐 Requesting camera and microphone permissions...")
+
         let cameraGranted = await AVCaptureDevice.requestAccess(for: .video)
+        print("🔐 Camera permission: \(cameraGranted ? "✅ GRANTED" : "❌ DENIED")")
+
         let audioGranted = await AVCaptureDevice.requestAccess(for: .audio)
+        print("🔐 Microphone permission: \(audioGranted ? "✅ GRANTED" : "❌ DENIED")")
 
         isAuthorized = cameraGranted && audioGranted
+        print("🔐 Overall authorization: \(isAuthorized ? "✅ AUTHORIZED" : "❌ NOT AUTHORIZED")")
 
         if isAuthorized {
+            print("🔐 Proceeding to camera setup...")
             await setupCamera()
+        } else {
+            print("❌ Cannot proceed - missing required permissions")
+            if !cameraGranted {
+                print("   - Camera access denied")
+            }
+            if !audioGranted {
+                print("   - Microphone access denied")
+            }
         }
     }
 

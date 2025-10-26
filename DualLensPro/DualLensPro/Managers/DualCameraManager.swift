@@ -85,6 +85,10 @@ class DualCameraManager: NSObject, ObservableObject {
     private let photoDelegateQueue = DispatchQueue(label: "com.duallens.photoDelegates")
     nonisolated(unsafe) private var _activePhotoDelegates: [String: PhotoCaptureDelegate] = [:]
 
+    // Photo data cache for combined photo creation
+    nonisolated(unsafe) private var lastFrontPhotoData: Data?
+    nonisolated(unsafe) private var lastBackPhotoData: Data?
+
     // MARK: - Preview Layers
     var frontPreviewLayer: AVCaptureVideoPreviewLayer?
     var backPreviewLayer: AVCaptureVideoPreviewLayer?
@@ -184,11 +188,18 @@ class DualCameraManager: NSObject, ObservableObject {
             object: nil
         )
 
+        // Device orientation changes for video orientation updates
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(deviceOrientationDidChange),
+            name: UIDevice.orientationDidChangeNotification,
+            object: nil
+        )
 
         // Thermal state monitoring
         // Note: Removed #selector for thermalStateChanged as it's not critical for release
         // TODO: Re-add thermal monitoring if needed
-        
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(audioSessionInterrupted),
@@ -445,9 +456,10 @@ class DualCameraManager: NSObject, ObservableObject {
         videoOutput.setSampleBufferDelegate(self, queue: videoQueue)
         videoOutput.alwaysDiscardsLateVideoFrames = true
 
-        // Configure video settings for optimal quality
+        // ✅ Configure video settings - use 420v (VideoRange) to match writer adaptors
+        // This prevents color/gamma shifts between capture and encoding
         let videoSettings: [String: Any] = [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
         ]
         videoOutput.videoSettings = videoSettings
 
@@ -471,12 +483,14 @@ class DualCameraManager: NSObject, ObservableObject {
             multiCamSession.addConnection(videoConnection)
 
             // Configure connection
+            videoConnection.videoOrientation = currentVideoOrientation()
             if videoConnection.isVideoStabilizationSupported {
                 videoConnection.preferredVideoStabilizationMode = .auto
             }
             if videoConnection.isVideoMirroringSupported && position == .front {
                 videoConnection.isVideoMirrored = true
             }
+            print("✅ Set video orientation to \(videoConnection.videoOrientation.rawValue) for \(position == .front ? "front" : "back") camera")
         } else {
             // For single-cam sessions, check and add normally
             guard singleCamSession.canAddOutput(videoOutput) else {
@@ -487,12 +501,14 @@ class DualCameraManager: NSObject, ObservableObject {
 
             // Configure connection
             if let connection = videoOutput.connection(with: .video) {
+                connection.videoOrientation = currentVideoOrientation()
                 if connection.isVideoStabilizationSupported {
                     connection.preferredVideoStabilizationMode = .auto
                 }
                 if connection.isVideoMirroringSupported && position == .front {
                     connection.isVideoMirrored = true
                 }
+                print("✅ Set video orientation to \(connection.videoOrientation.rawValue) for \(position == .front ? "front" : "back") camera (single-cam)")
             }
         }
 
@@ -751,7 +767,13 @@ class DualCameraManager: NSObject, ObservableObject {
             let delegate = PhotoCaptureDelegate(
                 continuation: continuation,
                 camera: "front"
-            ) { [weak self] in
+            ) { [weak self] data in
+                // Cache photo data for combined photo
+                self?.lastFrontPhotoData = data
+                // Try to create combined photo if we have both
+                Task {
+                    await self?.trySaveCombinedPhotoIfReady()
+                }
                 // Thread-safe cleanup of delegate
                 self?.removePhotoDelegate(for: delegateId)
             }
@@ -773,12 +795,94 @@ class DualCameraManager: NSObject, ObservableObject {
             let delegate = PhotoCaptureDelegate(
                 continuation: continuation,
                 camera: "back"
-            ) { [weak self] in
+            ) { [weak self] data in
+                // Cache photo data for combined photo
+                self?.lastBackPhotoData = data
+                // Try to create combined photo if we have both
+                Task {
+                    await self?.trySaveCombinedPhotoIfReady()
+                }
                 // Thread-safe cleanup of delegate
                 self?.removePhotoDelegate(for: delegateId)
             }
             addPhotoDelegate(delegate, for: delegateId)
             photoOutput.capturePhoto(with: settings, delegate: delegate)
+        }
+    }
+
+    // MARK: - Combined Photo
+
+    @MainActor
+    private func trySaveCombinedPhotoIfReady() async {
+        guard let frontData = lastFrontPhotoData,
+              let backData = lastBackPhotoData else {
+            return  // Wait for both photos
+        }
+
+        print("📸 Both photos captured - creating combined photo...")
+
+        do {
+            try await saveCombinedPhoto(frontData: frontData, backData: backData)
+            print("✅ Combined photo saved successfully")
+        } catch {
+            print("❌ Failed to save combined photo: \(error.localizedDescription)")
+            errorMessage = "Failed to save combined photo: \(error.localizedDescription)"
+        }
+
+        // Clear cached data
+        lastFrontPhotoData = nil
+        lastBackPhotoData = nil
+    }
+
+    private func saveCombinedPhoto(frontData: Data, backData: Data) async throws {
+        print("📸 Creating stacked combined photo...")
+
+        guard let frontImage = CIImage(data: frontData),
+              let backImage = CIImage(data: backData) else {
+            throw CameraError.photoOutputNotConfigured
+        }
+
+        // Calculate dimensions for stacking
+        let frontExtent = frontImage.extent
+        let backExtent = backImage.extent
+        let maxWidth = max(frontExtent.width, backExtent.width)
+        let totalHeight = frontExtent.height + backExtent.height
+
+        // Position front on top, back on bottom
+        let frontPositioned = frontImage.transformed(by: CGAffineTransform(translationX: 0, y: backExtent.height))
+        let backPositioned = backImage
+
+        // Composite: front over back
+        let composed = frontPositioned.composited(over: backPositioned)
+
+        // Render to HEIF data
+        let context = CIContext()
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let heifData = context.heifRepresentation(of: composed, format: .RGBA8, colorSpace: colorSpace) else {
+            throw CameraError.photoOutputNotConfigured
+        }
+
+        print("📸 Composed image size: \(maxWidth)x\(totalHeight), data size: \(heifData.count) bytes")
+
+        // Save to Photos library
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            PHPhotoLibrary.shared().performChanges({
+                let req = PHAssetCreationRequest.forAsset()
+                req.addResource(with: .photo, data: heifData, options: nil)
+            }) { success, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                } else if success {
+                    print("✅ Combined photo saved to Photos library")
+                    // Notify UI to refresh gallery
+                    Task { @MainActor in
+                        NotificationCenter.default.post(name: .init("RefreshGalleryThumbnail"), object: nil)
+                    }
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: CameraError.failedToSaveToPhotos)
+                }
+            }
         }
     }
 
@@ -983,9 +1087,10 @@ class DualCameraManager: NSObject, ObservableObject {
 
         await MainActor.run {
             recordingState = .recording
+            recordingDuration = 0  // ✅ Reset timer to 0 when starting
         }
 
-        print("✅ State changed to recording")
+        print("✅ State changed to recording, timer reset to 0")
 
         // Create output URLs
         let timestamp = Date().timeIntervalSince1970
@@ -1077,20 +1182,104 @@ class DualCameraManager: NSObject, ObservableObject {
         print("✅ Recording stopped successfully")
     }
     
-    private func currentVideoTransform() -> CGAffineTransform {
+    // MARK: - Orientation Helpers
+
+    /// Get current video orientation for AVCaptureConnection
+    /// Maps device orientation to camera space (note the inversion for landscape)
+    private func currentVideoOrientation() -> AVCaptureVideoOrientation {
         let orientation = UIDevice.current.orientation
         switch orientation {
         case .landscapeLeft:
-            // Home button (or bottom) on the right
-            return .identity
+            return .landscapeRight  // Camera space vs UI space inversion
         case .landscapeRight:
-            return CGAffineTransform(rotationAngle: .pi)
+            return .landscapeLeft
         case .portraitUpsideDown:
-            return CGAffineTransform(rotationAngle: -.pi / 2)
-        case .portrait:
-            fallthrough
+            return .portraitUpsideDown
         default:
-            return CGAffineTransform(rotationAngle: .pi / 2)
+            return .portrait
+        }
+    }
+
+    /// Get current video transform for AVAssetWriterInput
+    /// Camera sensor captures in landscape (1920x1080), so we need to rotate based on device orientation
+    private func currentVideoTransform() -> CGAffineTransform {
+        let orientation = UIDevice.current.orientation
+        print("📱 Current device orientation: \(orientation.rawValue) (\(orientationName(orientation)))")
+
+        let transform: CGAffineTransform
+        switch orientation {
+        case .portrait:
+            // Device held upright - rotate 90° clockwise to make video upright
+            transform = CGAffineTransform(rotationAngle: -.pi / 2)
+            print("🔄 Using -90° (clockwise) transform for portrait")
+        case .portraitUpsideDown:
+            // Device upside down - rotate 90° counter-clockwise
+            transform = CGAffineTransform(rotationAngle: .pi / 2)
+            print("🔄 Using 90° (counter-clockwise) transform for portrait upside down")
+        case .landscapeLeft:
+            // Device rotated left (home button on left) - no rotation needed
+            transform = .identity
+            print("🔄 Using identity transform for landscape left")
+        case .landscapeRight:
+            // Device rotated right (home button on right) - rotate 180°
+            transform = CGAffineTransform(rotationAngle: .pi)
+            print("🔄 Using 180° transform for landscape right")
+        default:
+            // Default to portrait if orientation is unknown/face up/face down
+            transform = CGAffineTransform(rotationAngle: -.pi / 2)
+            print("🔄 Using -90° (clockwise) transform for default/unknown orientation")
+        }
+
+        return transform
+    }
+
+    private func orientationName(_ orientation: UIDeviceOrientation) -> String {
+        switch orientation {
+        case .portrait: return "portrait"
+        case .portraitUpsideDown: return "portraitUpsideDown"
+        case .landscapeLeft: return "landscapeLeft"
+        case .landscapeRight: return "landscapeRight"
+        case .faceUp: return "faceUp"
+        case .faceDown: return "faceDown"
+        case .unknown: return "unknown"
+        @unknown default: return "unknown"
+        }
+    }
+
+    /// Update video orientation on all active connections
+    @objc nonisolated private func deviceOrientationDidChange() {
+        print("📱 Device orientation changed - updating video connections")
+        sessionQueue.async { [weak self] in
+            guard let self = self else { return }
+            let orientation = self.currentVideoOrientation()
+
+            // Update front video output connection
+            if let frontOutput = self.frontVideoOutput,
+               let connection = frontOutput.connection(with: .video) {
+                connection.videoOrientation = orientation
+                print("✅ Updated front video orientation to \(orientation.rawValue)")
+            }
+
+            // Update back video output connection
+            if let backOutput = self.backVideoOutput,
+               let connection = backOutput.connection(with: .video) {
+                connection.videoOrientation = orientation
+                print("✅ Updated back video orientation to \(orientation.rawValue)")
+            }
+
+            // Update front photo output connection
+            if let frontPhoto = self.frontPhotoOutput,
+               let connection = frontPhoto.connection(with: .video) {
+                connection.videoOrientation = orientation
+                print("✅ Updated front photo orientation to \(orientation.rawValue)")
+            }
+
+            // Update back photo output connection
+            if let backPhoto = self.backPhotoOutput,
+               let connection = backPhoto.connection(with: .video) {
+                connection.videoOrientation = orientation
+                print("✅ Updated back photo orientation to \(orientation.rawValue)")
+            }
         }
     }
 
@@ -1105,18 +1294,24 @@ class DualCameraManager: NSObject, ObservableObject {
         // Get recording parameters
         let dimensions = recordingQuality.dimensions
         let bitRate = recordingQuality.bitRate
+        let frameRate = captureMode.frameRate  // ✅ Get dynamic frame rate from capture mode
+        let transform = currentVideoTransform()  // ✅ Get current orientation transform
+
+        print("🎬 Setting up writers with \(frameRate)fps and transform: \(transform)")
 
         // Create the RecordingCoordinator actor
         let coordinator = RecordingCoordinator()
         self.recordingCoordinator = coordinator
 
-        // Configure the coordinator (thread-safe setup)
+        // Configure the coordinator (thread-safe setup) with orientation transform
         try await coordinator.configure(
             frontURL: frontURL,
             backURL: backURL,
             combinedURL: combinedURL,
             dimensions: (width: dimensions.width, height: dimensions.height),
-            bitRate: bitRate
+            bitRate: bitRate,
+            frameRate: frameRate,  // ✅ Pass dynamic frame rate
+            videoTransform: transform  // ✅ Pass orientation transform
         )
 
         print("✅ RecordingCoordinator configured and ready")
@@ -1204,16 +1399,25 @@ class DualCameraManager: NSObject, ObservableObject {
         print("   Back: \(backURL.lastPathComponent)")
         print("   Combined: \(combinedURL.lastPathComponent)")
 
-        // Save videos one at a time to avoid Swift 6 concurrency issues
+        // Save videos one at a time with delays to avoid threading issues
         do {
+            print("📸 [1/3] Saving front video...")
             try await saveVideoToPhotos(url: frontURL, title: "DualLensPro - Front Camera")
-            print("✅ Front video saved")
+            print("✅ [1/3] Front video saved successfully")
 
+            // Small delay between saves
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+
+            print("📸 [2/3] Saving back video...")
             try await saveVideoToPhotos(url: backURL, title: "DualLensPro - Back Camera")
-            print("✅ Back video saved")
+            print("✅ [2/3] Back video saved successfully")
 
+            // Small delay between saves
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+
+            print("📸 [3/3] Saving combined video...")
             try await saveVideoToPhotos(url: combinedURL, title: "DualLensPro - Combined")
-            print("✅ Combined video saved")
+            print("✅ [3/3] Combined video saved successfully")
         } catch {
             print("❌ Error saving video to Photos: \(error)")
             throw error
@@ -1263,53 +1467,84 @@ class DualCameraManager: NSObject, ObservableObject {
             throw error
         }
 
-        print("🔍 [9] About to create continuation...")
+        print("🔍 [9] About to save to Photos library...")
 
-        // ✅ TRY: Use performChangesAndWait to avoid async issues
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            print("🔍 [10] Inside continuation closure")
+        // ✅ Use performChangesAndWait on a background thread to avoid blocking main thread
+        return try await Task.detached {
+            print("🔍 [10] On background thread, about to call performChangesAndWait")
 
-            DispatchQueue.main.async {
-                print("🔍 [11] Inside main queue async block")
-                print("🔍 [12] About to get PHPhotoLibrary.shared()...")
+            var saveError: Error?
 
-                let photoLibrary = PHPhotoLibrary.shared()
-                print("🔍 [13] Got PHPhotoLibrary instance: \(photoLibrary)")
+            do {
+                try PHPhotoLibrary.shared().performChangesAndWait {
+                    print("🔍 [11] Inside performChangesAndWait block")
+                    let creationRequest = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: permanentURL)
+                    print("🔍 [12] Creation request: \(String(describing: creationRequest))")
 
-                print("🔍 [14] About to call performChanges...")
-
-                do {
-                    // Try synchronous version to avoid continuation issues
-                    try photoLibrary.performChangesAndWait {
-                        print("🔍 [15] Inside performChangesAndWait block")
-                        let creationRequest = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: permanentURL)
-                        print("🔍 [16] Creation request: \(String(describing: creationRequest))")
-                        creationRequest?.creationDate = Date()
-                        print("🔍 [17] Set creation date")
+                    if creationRequest == nil {
+                        print("🔍 [ERROR] Creation request is nil!")
                     }
 
-                    print("🔍 [18] performChangesAndWait completed successfully")
+                    creationRequest?.creationDate = Date()
+                    print("🔍 [13] Set creation date")
+                }
+                print("🔍 [14] performChangesAndWait completed successfully")
+            } catch {
+                print("🔍 [ERROR] performChangesAndWait failed: \(error)")
+                saveError = error
+            }
 
-                    // Clean up the Documents copy
-                    try? FileManager.default.removeItem(at: permanentURL)
-                    print("🔍 [19] Cleaned up Documents copy")
-
-                    print("🔍 [20] About to resume continuation (success)")
-                    continuation.resume()
-                    print("🔍 [21] Continuation resumed")
-
+            // Clean up the Documents copy
+            defer {
+                do {
+                    try FileManager.default.removeItem(at: permanentURL)
+                    print("🔍 [15] Cleaned up Documents copy")
                 } catch {
-                    print("🔍 [ERROR] performChangesAndWait threw error: \(error)")
-                    // Clean up the Documents copy
-                    try? FileManager.default.removeItem(at: permanentURL)
-                    print("🔍 [19b] Cleaned up Documents copy after error")
-
-                    print("🔍 [20b] About to resume continuation (error)")
-                    continuation.resume(throwing: error)
-                    print("🔍 [21b] Continuation resumed with error")
+                    print("🔍 [WARNING] Failed to clean up: \(error)")
                 }
             }
-        }
+
+            if let error = saveError {
+                throw error
+            }
+        }.value
+    }
+
+    private func savePhotoToLibrary(_ data: Data) async throws {
+        print("📸 Saving photo to library...")
+
+        // Copy to Documents first (sandbox requirement)
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let tempURL = documentsPath.appendingPathComponent("temp_photo_\(UUID().uuidString).jpg")
+
+        try data.write(to: tempURL)
+        print("✅ Wrote photo to temp location: \(tempURL.path)")
+
+        // ✅ Use performChangesAndWait on a background thread
+        return try await Task.detached {
+            var saveError: Error?
+
+            do {
+                try PHPhotoLibrary.shared().performChangesAndWait {
+                    let creationRequest = PHAssetChangeRequest.creationRequestForAssetFromImage(atFileURL: tempURL)
+                    creationRequest?.creationDate = Date()
+                }
+                print("✅ Photo saved successfully")
+            } catch {
+                print("❌ Failed to save photo: \(error)")
+                saveError = error
+            }
+
+            // Clean up temp file
+            defer {
+                try? FileManager.default.removeItem(at: tempURL)
+                print("✅ Cleaned up temp photo file")
+            }
+
+            if let error = saveError {
+                throw error
+            }
+        }.value
     }
 
     private func startRecordingTimer() {
@@ -1705,9 +1940,9 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate, @un
     // Protect continuation from being resumed more than once (timeout + completion race)
     private let continuationLock = OSAllocatedUnfairLock<CheckedContinuation<Void, Error>?>(initialState: nil)
     private let cameraName: String
-    private let onComplete: () -> Void
+    private let onComplete: (Data?) -> Void
 
-    init(continuation: CheckedContinuation<Void, Error>, camera: String, onComplete: @escaping () -> Void) {
+    init(continuation: CheckedContinuation<Void, Error>, camera: String, onComplete: @escaping (Data?) -> Void) {
         self.cameraName = camera
         self.onComplete = onComplete
         super.init()
@@ -1733,7 +1968,7 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate, @un
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        defer { onComplete() }  // Always clean up delegate after resuming
+        defer { onComplete(nil) }  // Always clean up delegate after resuming
 
         if let error = error {
             resumeOnce(.failure(error))
@@ -1761,6 +1996,9 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate, @un
             if let error = error {
                 self.resumeOnce(.failure(error))
             } else if success {
+                // Pass photo data to completion handler for combined photo
+                self.onComplete(imageData)
+
                 // Notify UI to refresh gallery thumbnail
                 Task { @MainActor in
                     NotificationCenter.default.post(name: .init("RefreshGalleryThumbnail"), object: nil)

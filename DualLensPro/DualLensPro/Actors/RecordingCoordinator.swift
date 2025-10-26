@@ -45,15 +45,24 @@ actor RecordingCoordinator {
     private var backURL: URL?
     private var combinedURL: URL?
 
+    // Frame compositor for stacked dual-camera output
+    private var compositor: FrameCompositor?
+
+    // Buffer cache for compositing
+    private var lastFrontBuffer: (buffer: CVPixelBuffer, time: CMTime)?
+
     // MARK: - Configuration
     func configure(
         frontURL: URL,
         backURL: URL,
         combinedURL: URL,
         dimensions: (width: Int, height: Int),
-        bitRate: Int
+        bitRate: Int,
+        frameRate: Int,
+        videoTransform: CGAffineTransform
     ) throws {
         print("🎬 RecordingCoordinator: Configuring...")
+        print("🎬 Frame rate: \(frameRate)fps, Transform: \(videoTransform)")
 
         self.frontURL = frontURL
         self.backURL = backURL
@@ -71,20 +80,23 @@ actor RecordingCoordinator {
             AVVideoHeightKey: dimensions.height,
             AVVideoCompressionPropertiesKey: [
                 AVVideoAverageBitRateKey: bitRate,
-                AVVideoExpectedSourceFrameRateKey: 30,
-                AVVideoMaxKeyFrameIntervalKey: 30
+                AVVideoExpectedSourceFrameRateKey: frameRate,  // ✅ Dynamic frame rate
+                AVVideoMaxKeyFrameIntervalKey: frameRate
             ]
         ]
 
-        // Setup video inputs
+        // Setup video inputs with transforms
         frontVideoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         frontVideoInput?.expectsMediaDataInRealTime = true
+        frontVideoInput?.transform = videoTransform  // ✅ Apply orientation transform
 
         backVideoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         backVideoInput?.expectsMediaDataInRealTime = true
+        backVideoInput?.transform = videoTransform  // ✅ Apply orientation transform
 
         combinedVideoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         combinedVideoInput?.expectsMediaDataInRealTime = true
+        combinedVideoInput?.transform = videoTransform  // ✅ Apply orientation transform
 
         // ✅ Audio settings optimized for quality
         let audioSettings: [String: Any] = [
@@ -137,6 +149,10 @@ actor RecordingCoordinator {
             }
         }
 
+        // Initialize frame compositor for stacked dual-camera output
+        compositor = FrameCompositor(width: dimensions.width, height: dimensions.height)
+        print("✅ FrameCompositor initialized for combined output")
+
         print("✅ RecordingCoordinator: Configuration complete")
         print("   Front: \(frontURL.lastPathComponent)")
         print("   Back: \(backURL.lastPathComponent)")
@@ -186,6 +202,7 @@ actor RecordingCoordinator {
     func appendFrontPixelBuffer(_ pixelBuffer: CVPixelBuffer, time: CMTime) throws {
         guard isWriting else { return }
 
+        // Append to front writer
         guard let adaptor = frontPixelBufferAdaptor,
               let input = frontVideoInput else {
             return
@@ -200,6 +217,9 @@ actor RecordingCoordinator {
         if !adaptor.append(pixelBuffer, withPresentationTime: time) {
             print("⚠️ Failed to append front pixel buffer at \(time.seconds)s")
         }
+
+        // Cache front buffer for compositing
+        lastFrontBuffer = (buffer: pixelBuffer, time: time)
     }
 
     func appendBackPixelBuffer(_ pixelBuffer: CVPixelBuffer, time: CMTime) throws {
@@ -214,12 +234,19 @@ actor RecordingCoordinator {
             }
         }
 
-        // Also append to combined writer (using back camera as main view)
+        // ✅ Create stacked composition for combined output
         if let adaptor = combinedPixelBufferAdaptor,
            let input = combinedVideoInput,
-           input.isReadyForMoreMediaData {
-            if !adaptor.append(pixelBuffer, withPresentationTime: time) {
-                print("⚠️ Failed to append combined pixel buffer at \(time.seconds)s")
+           input.isReadyForMoreMediaData,
+           let compositor = compositor {
+
+            // Compose front and back into stacked frame
+            if let composedBuffer = compositor.stacked(front: lastFrontBuffer?.buffer, back: pixelBuffer) {
+                if !adaptor.append(composedBuffer, withPresentationTime: time) {
+                    print("⚠️ Failed to append composed pixel buffer at \(time.seconds)s")
+                }
+            } else {
+                print("⚠️ Failed to compose frame at \(time.seconds)s")
             }
         }
     }
