@@ -13,46 +13,19 @@ struct TimerDisplay: View {
 
     var body: some View {
         Text(formattedTime)
-            .font(.system(size: 20, weight: .semibold, design: .monospaced))
+            .font(.system(size: 16, weight: .medium, design: .monospaced))
             .foregroundStyle(.white)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
             .background {
-                if !reduceTransparency {
-                    ZStack {
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .overlay {
                         Capsule()
-                            .fill(.ultraThinMaterial)
-
-                        LinearGradient(
-                            colors: [
-                                .black.opacity(0.4),
-                                .black.opacity(0.2)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                        .clipShape(Capsule())
-
-                        Capsule()
-                            .strokeBorder(
-                                LinearGradient(
-                                    colors: [
-                                        .white.opacity(0.3),
-                                        .white.opacity(0.15)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
+                            .fill(.black.opacity(0.3))
                     }
-                    .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
-                } else {
-                    Capsule()
-                        .fill(.regularMaterial)
-                        .opacity(0.9)
-                }
             }
+            .shadow(color: .black.opacity(0.2), radius: 4, y: 1)
     }
 
     private var formattedTime: String {

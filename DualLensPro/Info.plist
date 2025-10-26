@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>DualLensPro</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.duallens.pro</string>
+    <key>CFBundleName</key>
+    <string>DualLensPro</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+
+    <!-- Privacy Usage Descriptions -->
+    <key>NSCameraUsageDescription</key>
+    <string>DualLens Pro needs access to your camera to capture photos and videos from the front and back cameras.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>DualLens Pro needs access to your microphone to record audio with your videos.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>DualLens Pro needs access to your photo library to display and select your saved photos and videos.</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>DualLens Pro needs permission to save your captured photos and videos to your photo library.</string>
+</dict>
+</plist>

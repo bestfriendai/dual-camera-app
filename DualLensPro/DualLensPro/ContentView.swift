@@ -1,4 +1,3 @@
-
 //
 //  ContentView.swift
 //  DualLensPro
@@ -10,51 +9,42 @@ import SwiftUI
 import AVFoundation
 
 struct ContentView: View {
-    // Delay CameraViewModel initialization until onAppear to prevent crashes during app launch
-    @State private var cameraViewModel: CameraViewModel?
+    // Use StateObject to properly observe CameraViewModel's @Published properties
+    @StateObject private var cameraViewModel = CameraViewModel()
     @State private var showPermissionAlert = false
-    @State private var permissionCheckTimer: Timer?
     @State private var debugAuthStatus = "Initializing..."
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            if let viewModel = cameraViewModel {
-                if viewModel.isAuthorized {
-                    DualCameraView()
-                        .environmentObject(viewModel)
-                        .onAppear {
-                            print("✅ DualCameraView appeared - authorized!")
-                            stopPermissionPolling()
-                        }
-                } else {
-                    PermissionView(showAlert: $showPermissionAlert)
-                        .onAppear {
-                            print("⚠️ PermissionView appeared - NOT authorized")
-                            startPermissionPolling()
-                        }
-                        .onDisappear {
-                            stopPermissionPolling()
-                        }
-                }
+            if cameraViewModel.isAuthorized {
+                DualCameraView()
+                    .environmentObject(cameraViewModel)
+                    .onAppear {
+                        print("✅ DualCameraView appeared - authorized!")
+                    }
             } else {
-                // Loading state while initializing
-                ProgressView()
-                    .tint(.white)
+                PermissionView(showAlert: $showPermissionAlert)
+                    .environmentObject(cameraViewModel)
+                    .onAppear {
+                        print("⚠️ PermissionView appeared - NOT authorized")
+                    }
             }
 
-            // DEBUG: Show authorization status
+            // DEBUG: Show authorization status - Hidden in production
+            // Uncomment the code below for debugging
+            /*
             VStack {
                 Spacer()
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Debug Info:")
                         .font(.caption2.bold())
                         .foregroundStyle(.yellow)
-                    Text("VM: \(cameraViewModel != nil ? "✓" : "✗")")
+                    Text("VM: ✓")
                         .font(.caption2)
                         .foregroundStyle(.yellow)
-                    Text("isAuth: \(cameraViewModel?.isAuthorized ?? false ? "✓" : "✗")")
+                    Text("isAuth: \(cameraViewModel.isAuthorized ? "✓" : "✗")")
                         .font(.caption2)
                         .foregroundStyle(.yellow)
                     Text("Cam: \(statusText(AVCaptureDevice.authorizationStatus(for: .video)))")
@@ -65,61 +55,70 @@ struct ContentView: View {
                         .foregroundStyle(.yellow)
 
                     // Multi-cam support status
-                    if let vm = cameraViewModel {
-                        Text("Multi-Cam: \(vm.cameraManager.isMultiCamSupported ? "✓ SUPPORTED" : "✗ NOT SUPPORTED")")
-                            .font(.caption2.bold())
-                            .foregroundStyle(vm.cameraManager.isMultiCamSupported ? .green : .orange)
-                        Text("Session: \(vm.cameraManager.isSessionRunning ? "✓ Running" : "✗ Stopped")")
-                            .font(.caption2)
-                            .foregroundStyle(.yellow)
-                    }
-
-                    Text(debugAuthStatus)
+                    Text("Multi-Cam: \(cameraViewModel.cameraManager.isMultiCamSupported ? "✓ SUPPORTED" : "✗ NOT SUPPORTED")")
+                        .font(.caption2.bold())
+                        .foregroundStyle(cameraViewModel.cameraManager.isMultiCamSupported ? .green : .orange)
+                    Text("Session: \(cameraViewModel.cameraManager.isSessionRunning ? "✓ Running" : "✗ Stopped")")
                         .font(.caption2)
                         .foregroundStyle(.yellow)
 
-                    if let vm = cameraViewModel {
-                        if !vm.errorMessage.isEmpty {
-                            Text("ERROR: \(vm.errorMessage)")
+                    if !cameraViewModel.errorMessage.isEmpty {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("ERROR:")
+                                .font(.caption2.bold())
+                                .foregroundStyle(.red)
+                            Text(cameraViewModel.errorMessage)
                                 .font(.caption2)
                                 .foregroundStyle(.red)
                                 .multilineTextAlignment(.leading)
-                        } else if vm.isAuthorized == false {
-                            Text("ERROR: Camera not initialized")
-                                .font(.caption2)
-                                .foregroundStyle(.red)
                         }
+                    } else if cameraViewModel.isAuthorized == false {
+                        Text("ERROR: Camera not initialized")
+                            .font(.caption2)
+                            .foregroundStyle(.red)
                     }
 
                     // Manual refresh button
                     Button("Force Refresh") {
                         print("🔄 FORCE REFRESH TAPPED")
-                        cameraViewModel?.checkAuthorization()
+                        cameraViewModel.checkAuthorization()
                     }
                     .font(.caption2)
                     .foregroundStyle(.cyan)
                     .padding(.top, 4)
+
+                    // Show error in PermissionView too
+                    if !cameraViewModel.errorMessage.isEmpty {
+                        Button("View Full Error") {
+                            print("Full error: \(cameraViewModel.errorMessage)")
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                    }
                 }
                 .padding(8)
                 .background(.black.opacity(0.7))
                 .cornerRadius(8)
                 .padding()
             }
+            */
         }
         .onAppear {
-            // Initialize CameraViewModel AFTER the view appears, not during init
-            if cameraViewModel == nil {
-                cameraViewModel = CameraViewModel()
-            }
-            cameraViewModel?.checkAuthorization()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-            // Re-check authorization when app returns to foreground (after permission dialog)
-            cameraViewModel?.checkAuthorization()
+            // Check authorization when view appears
+            cameraViewModel.checkAuthorization()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
-            // Re-check when app becomes active (handles iOS 26 overlay permission dialogs)
-            cameraViewModel?.checkAuthorization()
+            // Re-check when app becomes active (handles iOS 26 permission dialogs)
+            // Only check if not already authorized to prevent duplicate setup attempts
+            if !cameraViewModel.isAuthorized {
+                print("🔔 App became active - re-checking authorization")
+                cameraViewModel.checkAuthorization()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("ForceCheckAuthorization"))) { _ in
+            // Manual trigger from PermissionView
+            print("🔔 Received ForceCheckAuthorization notification")
+            cameraViewModel.checkAuthorization()
         }
         .alert("Camera Access Required", isPresented: $showPermissionAlert) {
             Button("Settings", action: openSettings)
@@ -129,25 +128,6 @@ struct ContentView: View {
         }
     }
 
-    private func startPermissionPolling() {
-        print("🔄 Starting permission polling...")
-        stopPermissionPolling()
-        permissionCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [cameraViewModel, debugAuthStatus] _ in
-            // No weak self needed - ContentView is a struct (value type)
-            if let vm = cameraViewModel {
-                let authStatus = vm.isAuthorized
-                print("🔍 Polling - isAuthorized: \(authStatus)")
-                vm.checkAuthorization()
-            }
-        }
-    }
-
-    private func stopPermissionPolling() {
-        print("🛑 Stopping permission polling")
-        permissionCheckTimer?.invalidate()
-        permissionCheckTimer = nil
-    }
-    
     private func openSettings() {
         if let url = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(url)

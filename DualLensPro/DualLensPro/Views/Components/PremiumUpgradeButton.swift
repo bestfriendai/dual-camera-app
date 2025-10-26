@@ -18,25 +18,25 @@ struct PremiumUpgradeButton: View {
             onUpgrade()
             triggerHaptic()
         }) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: "star.fill")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(.yellow)
 
                 Text("\(maxDuration) Max")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
 
                 Text("-")
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.white.opacity(0.5))
 
                 Text("Upgrade")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.blue)
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
             .background {
                 ZStack {
                     Capsule()

@@ -7,87 +7,88 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		780C7E4EDB564945AFE9120D35E858FF /* DualLensProApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6204DFF1975846BEA2F90766027AEAB3 /* DualLensProApp.swift */; };
-		E7EDD670D72E4E98A6619FF8EA0432C2 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E13D1194C5F24F55864DCFA50DE17C9E /* ContentView.swift */; };
-		7C56031A8A0B487CBA8D21A6023445A0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 92FBAED9CF9D4A368447E4566D7F9264 /* Assets.xcassets */; };
-		715F45837CD34CBAB78C6B7703AFC8E5 /* DualCameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 116DC056E3414CA280B0BB4561269946 /* DualCameraManager.swift */; };
-		FBDFD835457548CDB013EC6D7BC9443A /* CameraViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 429106A385EF4F8688801E40B26F675C /* CameraViewModel.swift */; };
-		E63152C084E94B2F8FE6AE24C0310982 /* CameraPosition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79474498503C44C1BB5B642205F90C94 /* CameraPosition.swift */; };
-		23F2CE126CE94684A931C2D86A454125 /* CameraConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF4AB8B5642247F485F793FCA15EC10B /* CameraConfiguration.swift */; };
-		B899CA84C01D401CB587B23AC822643E /* VideoOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 547712BF60D04DCAA0994453E44856F0 /* VideoOutput.swift */; };
 		00A67028FB3E453DAA5952E8C68DECC7 /* RecordingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8095C99A3EF4910A30AC59CFF8612D1 /* RecordingState.swift */; };
-		44EC9CDFCCC94459B46A4DDFF1D46A83 /* GlassEffect.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDB4C09FF5CC46CABF18F52ECC339343 /* GlassEffect.swift */; };
-		69946CC0A9684DDE82E3760FD11998E2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D130B1CC4A4D407EA134161D6C50EDBA /* SettingsView.swift */; };
-		F47A61FB702B4A7095390DF647D58238 /* CameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE49A6EA3698450796737762C4AAAE36 /* CameraPreviewView.swift */; };
-		41316D26A71A48EEA14207102E859201 /* CameraLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C52A261536B4DF9884C339B2EA9BF5C /* CameraLabel.swift */; };
-		D2260DC3ABC74A588FEAA9AEFF931559 /* ControlPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0DF098A4244D99945203D7C890DD02 /* ControlPanel.swift */; };
-		419F3AB0FF6943B3B37719CC7A471E34 /* PermissionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84E85F453B934DDCA89888BC4DAB45F1 /* PermissionView.swift */; };
-		5CE94F1CDC8140CE8ADC22C0FA13086A /* RecordingIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD32DF5E5BE044A18FF3F687E91535BE /* RecordingIndicator.swift */; };
-		9E4A11B3E5A34638BC133829FAA73124 /* GridOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D40699E0C54B34A3C2FAFB302B124A /* GridOverlay.swift */; };
-		20E76300D3EE47AB953940282B5D25FA /* DualCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF8E16A415184B3DB6C1547BEA35E2E5 /* DualCameraView.swift */; };
-		CF8EE310388C41AA97C908E9306E1A95 /* RecordButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5907F2080684009A1CA7CFD1C10DEB3 /* RecordButton.swift */; };
-		8D02213DC71997315D8AE8C6 /* ModeSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1699D10C6D68C13DBA54629 /* ModeSelector.swift */; };
-		9EFD3B798B12332B70760A7C /* TimerDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD5A8A98441733A2D90C0F0A /* TimerDisplay.swift */; };
-		83804F8EAFABC7D7FAA2500C /* PremiumUpgradeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6FC3C369C7DB6CC8202A073 /* PremiumUpgradeButton.swift */; };
-		51200C05E5C29189ED6B8AF3 /* ZoomControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68E3398A0DE28D565958AA48 /* ZoomControl.swift */; };
-		960A5DA24588F26ED18E5903 /* AspectRatioButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E889333AECFA0A37307210D /* AspectRatioButton.swift */; };
-		B308F1D9749B92DF7528FDDF /* GalleryThumbnail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57C0820505B87A6CE6E763B5 /* GalleryThumbnail.swift */; };
-		895F9277571725B7CFEC17A3 /* ModeSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE87C23CF29E890548E4E208 /* ModeSelectorView.swift */; };
-		714C046E82B8DC623CFD84D1 /* PremiumUpgradeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92C316F8CDAFCFA96B2BF88D /* PremiumUpgradeView.swift */; };
-		8BDED1C8BD16C091EB45D296 /* ZoomControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8BC9AA5484E0EC7BA9620AA /* ZoomControlView.swift */; };
-		AB45B855320AA05C248F67BB /* GalleryButtonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA526A6A08A8B3A76B6EC01 /* GalleryButtonView.swift */; };
-		40DA51F71067ADCB361C121A /* AdvancedControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD5DBDB342F72CDC025A563F /* AdvancedControlsView.swift */; };
-		92A1E52008B0DF93A3B8351C /* RecordingLimitWarningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CD31B5A9C2699430B988D53 /* RecordingLimitWarningView.swift */; };
-		9695D2CE56BE337E370B6D7B /* TimerCountdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 878B76AF4184B7E3FF70C46E /* TimerCountdownView.swift */; };
-		A9187C38CAC172B20C02337C /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDDC03AB831B3211994AD463 /* HapticManager.swift */; };
-		D74988C1DB675617D96AD039 /* SubscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C19AE9C5DF494E8D98E1905E /* SubscriptionManager.swift */; };
 		120299DFCF937CAFED5000C4 /* CaptureMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DDD32C5C3AC03734263522B /* CaptureMode.swift */; };
-		AE762C704D97A228FAE03CE9 /* SettingsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD860A403E289022C4AD993C /* SettingsViewModel.swift */; };
+		20E76300D3EE47AB953940282B5D25FA /* DualCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF8E16A415184B3DB6C1547BEA35E2E5 /* DualCameraView.swift */; };
+		23F2CE126CE94684A931C2D86A454125 /* CameraConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF4AB8B5642247F485F793FCA15EC10B /* CameraConfiguration.swift */; };
+		40DA51F71067ADCB361C121A /* AdvancedControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD5DBDB342F72CDC025A563F /* AdvancedControlsView.swift */; };
+		41316D26A71A48EEA14207102E859201 /* CameraLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C52A261536B4DF9884C339B2EA9BF5C /* CameraLabel.swift */; };
+		419F3AB0FF6943B3B37719CC7A471E34 /* PermissionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84E85F453B934DDCA89888BC4DAB45F1 /* PermissionView.swift */; };
+		44EC9CDFCCC94459B46A4DDFF1D46A83 /* GlassEffect.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDB4C09FF5CC46CABF18F52ECC339343 /* GlassEffect.swift */; };
+		51200C05E5C29189ED6B8AF3 /* ZoomControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68E3398A0DE28D565958AA48 /* ZoomControl.swift */; };
 		54D33078169781FA90A898DE /* GalleryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0E730F0A2E0FD8F23D32FFB /* GalleryViewModel.swift */; };
+		5CE94F1CDC8140CE8ADC22C0FA13086A /* RecordingIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD32DF5E5BE044A18FF3F687E91535BE /* RecordingIndicator.swift */; };
+		69946CC0A9684DDE82E3760FD11998E2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D130B1CC4A4D407EA134161D6C50EDBA /* SettingsView.swift */; };
+		714C046E82B8DC623CFD84D1 /* PremiumUpgradeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92C316F8CDAFCFA96B2BF88D /* PremiumUpgradeView.swift */; };
+		715F45837CD34CBAB78C6B7703AFC8E5 /* DualCameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 116DC056E3414CA280B0BB4561269946 /* DualCameraManager.swift */; };
+		780C7E4EDB564945AFE9120D35E858FF /* DualLensProApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6204DFF1975846BEA2F90766027AEAB3 /* DualLensProApp.swift */; };
+		7C56031A8A0B487CBA8D21A6023445A0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 92FBAED9CF9D4A368447E4566D7F9264 /* Assets.xcassets */; };
+		83804F8EAFABC7D7FAA2500C /* PremiumUpgradeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6FC3C369C7DB6CC8202A073 /* PremiumUpgradeButton.swift */; };
+		895F9277571725B7CFEC17A3 /* ModeSelectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE87C23CF29E890548E4E208 /* ModeSelectorView.swift */; };
+		8BDED1C8BD16C091EB45D296 /* ZoomControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8BC9AA5484E0EC7BA9620AA /* ZoomControlView.swift */; };
+		8D02213DC71997315D8AE8C6 /* ModeSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1699D10C6D68C13DBA54629 /* ModeSelector.swift */; };
 		8E0ABAFF27D1589F175F9A90 /* PhotoLibraryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40AAFA5B7339E6421FC257FE /* PhotoLibraryService.swift */; };
+		92A1E52008B0DF93A3B8351C /* RecordingLimitWarningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CD31B5A9C2699430B988D53 /* RecordingLimitWarningView.swift */; };
+		960A5DA24588F26ED18E5903 /* AspectRatioButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E889333AECFA0A37307210D /* AspectRatioButton.swift */; };
+		9695D2CE56BE337E370B6D7B /* TimerCountdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 878B76AF4184B7E3FF70C46E /* TimerCountdownView.swift */; };
+		9E4A11B3E5A34638BC133829FAA73124 /* GridOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D40699E0C54B34A3C2FAFB302B124A /* GridOverlay.swift */; };
+		9EFD3B798B12332B70760A7C /* TimerDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD5A8A98441733A2D90C0F0A /* TimerDisplay.swift */; };
+		A9187C38CAC172B20C02337C /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDDC03AB831B3211994AD463 /* HapticManager.swift */; };
+		AB45B855320AA05C248F67BB /* GalleryButtonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA526A6A08A8B3A76B6EC01 /* GalleryButtonView.swift */; };
+		AE762C704D97A228FAE03CE9 /* SettingsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD860A403E289022C4AD993C /* SettingsViewModel.swift */; };
+		B308F1D9749B92DF7528FDDF /* GalleryThumbnail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57C0820505B87A6CE6E763B5 /* GalleryThumbnail.swift */; };
+		B899CA84C01D401CB587B23AC822643E /* VideoOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 547712BF60D04DCAA0994453E44856F0 /* VideoOutput.swift */; };
+		CF8EE310388C41AA97C908E9306E1A95 /* RecordButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5907F2080684009A1CA7CFD1C10DEB3 /* RecordButton.swift */; };
+		D2260DC3ABC74A588FEAA9AEFF931559 /* ControlPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0DF098A4244D99945203D7C890DD02 /* ControlPanel.swift */; };
+		D74988C1DB675617D96AD039 /* SubscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C19AE9C5DF494E8D98E1905E /* SubscriptionManager.swift */; };
+		E63152C084E94B2F8FE6AE24C0310982 /* CameraPosition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79474498503C44C1BB5B642205F90C94 /* CameraPosition.swift */; };
+		E7EDD670D72E4E98A6619FF8EA0432C2 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E13D1194C5F24F55864DCFA50DE17C9E /* ContentView.swift */; };
+		F47A61FB702B4A7095390DF647D58238 /* CameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE49A6EA3698450796737762C4AAAE36 /* CameraPreviewView.swift */; };
+		FBDFD835457548CDB013EC6D7BC9443A /* CameraViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 429106A385EF4F8688801E40B26F675C /* CameraViewModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		07E300F6722F4BA69CAD6116942BF12B /* DualLensPro.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DualLensPro.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		6204DFF1975846BEA2F90766027AEAB3 /* DualLensProApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualLensProApp.swift; sourceTree = "<group>"; };
-		E13D1194C5F24F55864DCFA50DE17C9E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		92FBAED9CF9D4A368447E4566D7F9264 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		116DC056E3414CA280B0BB4561269946 /* DualCameraManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualCameraManager.swift; sourceTree = "<group>"; };
+		40AAFA5B7339E6421FC257FE /* PhotoLibraryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryService.swift; sourceTree = "<group>"; };
 		429106A385EF4F8688801E40B26F675C /* CameraViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewModel.swift; sourceTree = "<group>"; };
-		79474498503C44C1BB5B642205F90C94 /* CameraPosition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPosition.swift; sourceTree = "<group>"; };
-		DF4AB8B5642247F485F793FCA15EC10B /* CameraConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraConfiguration.swift; sourceTree = "<group>"; };
-		547712BF60D04DCAA0994453E44856F0 /* VideoOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoOutput.swift; sourceTree = "<group>"; };
-		A8095C99A3EF4910A30AC59CFF8612D1 /* RecordingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingState.swift; sourceTree = "<group>"; };
-		FDB4C09FF5CC46CABF18F52ECC339343 /* GlassEffect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassEffect.swift; sourceTree = "<group>"; };
-		D130B1CC4A4D407EA134161D6C50EDBA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		EE49A6EA3698450796737762C4AAAE36 /* CameraPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreviewView.swift; sourceTree = "<group>"; };
-		7C52A261536B4DF9884C339B2EA9BF5C /* CameraLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraLabel.swift; sourceTree = "<group>"; };
-		DB0DF098A4244D99945203D7C890DD02 /* ControlPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPanel.swift; sourceTree = "<group>"; };
-		84E85F453B934DDCA89888BC4DAB45F1 /* PermissionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionView.swift; sourceTree = "<group>"; };
-		AD32DF5E5BE044A18FF3F687E91535BE /* RecordingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingIndicator.swift; sourceTree = "<group>"; };
-		45D40699E0C54B34A3C2FAFB302B124A /* GridOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridOverlay.swift; sourceTree = "<group>"; };
-		EF8E16A415184B3DB6C1547BEA35E2E5 /* DualCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualCameraView.swift; sourceTree = "<group>"; };
-		E5907F2080684009A1CA7CFD1C10DEB3 /* RecordButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordButton.swift; sourceTree = "<group>"; };
 		45D31302588846D887C954AC90343832 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		C1699D10C6D68C13DBA54629 /* ModeSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeSelector.swift; sourceTree = "<group>"; };
-		DD5A8A98441733A2D90C0F0A /* TimerDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimerDisplay.swift; sourceTree = "<group>"; };
-		A6FC3C369C7DB6CC8202A073 /* PremiumUpgradeButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PremiumUpgradeButton.swift; sourceTree = "<group>"; };
+		45D40699E0C54B34A3C2FAFB302B124A /* GridOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridOverlay.swift; sourceTree = "<group>"; };
+		547712BF60D04DCAA0994453E44856F0 /* VideoOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoOutput.swift; sourceTree = "<group>"; };
+		57C0820505B87A6CE6E763B5 /* GalleryThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryThumbnail.swift; sourceTree = "<group>"; };
+		6204DFF1975846BEA2F90766027AEAB3 /* DualLensProApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualLensProApp.swift; sourceTree = "<group>"; };
 		68E3398A0DE28D565958AA48 /* ZoomControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomControl.swift; sourceTree = "<group>"; };
 		6E889333AECFA0A37307210D /* AspectRatioButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AspectRatioButton.swift; sourceTree = "<group>"; };
-		57C0820505B87A6CE6E763B5 /* GalleryThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryThumbnail.swift; sourceTree = "<group>"; };
-		AE87C23CF29E890548E4E208 /* ModeSelectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeSelectorView.swift; sourceTree = "<group>"; };
-		92C316F8CDAFCFA96B2BF88D /* PremiumUpgradeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PremiumUpgradeView.swift; sourceTree = "<group>"; };
-		F8BC9AA5484E0EC7BA9620AA /* ZoomControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomControlView.swift; sourceTree = "<group>"; };
-		EBA526A6A08A8B3A76B6EC01 /* GalleryButtonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryButtonView.swift; sourceTree = "<group>"; };
-		AD5DBDB342F72CDC025A563F /* AdvancedControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedControlsView.swift; sourceTree = "<group>"; };
+		79474498503C44C1BB5B642205F90C94 /* CameraPosition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPosition.swift; sourceTree = "<group>"; };
+		7C52A261536B4DF9884C339B2EA9BF5C /* CameraLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraLabel.swift; sourceTree = "<group>"; };
 		7CD31B5A9C2699430B988D53 /* RecordingLimitWarningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingLimitWarningView.swift; sourceTree = "<group>"; };
+		84E85F453B934DDCA89888BC4DAB45F1 /* PermissionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionView.swift; sourceTree = "<group>"; };
 		878B76AF4184B7E3FF70C46E /* TimerCountdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimerCountdownView.swift; sourceTree = "<group>"; };
-		BDDC03AB831B3211994AD463 /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
-		C19AE9C5DF494E8D98E1905E /* SubscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionManager.swift; sourceTree = "<group>"; };
+		92C316F8CDAFCFA96B2BF88D /* PremiumUpgradeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PremiumUpgradeView.swift; sourceTree = "<group>"; };
+		92FBAED9CF9D4A368447E4566D7F9264 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9DDD32C5C3AC03734263522B /* CaptureMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureMode.swift; sourceTree = "<group>"; };
-		FD860A403E289022C4AD993C /* SettingsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewModel.swift; sourceTree = "<group>"; };
+		A6FC3C369C7DB6CC8202A073 /* PremiumUpgradeButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PremiumUpgradeButton.swift; sourceTree = "<group>"; };
+		A8095C99A3EF4910A30AC59CFF8612D1 /* RecordingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingState.swift; sourceTree = "<group>"; };
+		AD32DF5E5BE044A18FF3F687E91535BE /* RecordingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingIndicator.swift; sourceTree = "<group>"; };
+		AD5DBDB342F72CDC025A563F /* AdvancedControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedControlsView.swift; sourceTree = "<group>"; };
+		AE87C23CF29E890548E4E208 /* ModeSelectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeSelectorView.swift; sourceTree = "<group>"; };
+		BDDC03AB831B3211994AD463 /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
 		C0E730F0A2E0FD8F23D32FFB /* GalleryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryViewModel.swift; sourceTree = "<group>"; };
-		40AAFA5B7339E6421FC257FE /* PhotoLibraryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryService.swift; sourceTree = "<group>"; };
+		C1699D10C6D68C13DBA54629 /* ModeSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeSelector.swift; sourceTree = "<group>"; };
+		C19AE9C5DF494E8D98E1905E /* SubscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionManager.swift; sourceTree = "<group>"; };
+		D130B1CC4A4D407EA134161D6C50EDBA /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		DB0DF098A4244D99945203D7C890DD02 /* ControlPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPanel.swift; sourceTree = "<group>"; };
+		DD5A8A98441733A2D90C0F0A /* TimerDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimerDisplay.swift; sourceTree = "<group>"; };
+		DF4AB8B5642247F485F793FCA15EC10B /* CameraConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraConfiguration.swift; sourceTree = "<group>"; };
+		E13D1194C5F24F55864DCFA50DE17C9E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		E5907F2080684009A1CA7CFD1C10DEB3 /* RecordButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordButton.swift; sourceTree = "<group>"; };
+		EBA526A6A08A8B3A76B6EC01 /* GalleryButtonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryButtonView.swift; sourceTree = "<group>"; };
+		EE49A6EA3698450796737762C4AAAE36 /* CameraPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreviewView.swift; sourceTree = "<group>"; };
+		EF8E16A415184B3DB6C1547BEA35E2E5 /* DualCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualCameraView.swift; sourceTree = "<group>"; };
+		F8BC9AA5484E0EC7BA9620AA /* ZoomControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomControlView.swift; sourceTree = "<group>"; };
+		FCC9A6A62EADC36500C863CB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		FD860A403E289022C4AD993C /* SettingsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewModel.swift; sourceTree = "<group>"; };
+		FDB4C09FF5CC46CABF18F52ECC339343 /* GlassEffect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassEffect.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -101,39 +102,12 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		6E6B8B0F1EFC406AA805416C0E0CD4F1 = {
+		2D23C35F733D4D94B7208682AEFEC8FE /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				F93A0B7E7DFB4EAC86682746B1BEA55A /* DualLensPro */,
-				2D23C35F733D4D94B7208682AEFEC8FE /* Products */,
+				07E300F6722F4BA69CAD6116942BF12B /* DualLensPro.app */,
 			);
-			sourceTree = "<group>";
-		};
-		F93A0B7E7DFB4EAC86682746B1BEA55A /* DualLensPro */ = {
-			isa = PBXGroup;
-			children = (
-				6204DFF1975846BEA2F90766027AEAB3 /* DualLensProApp.swift */,
-				E13D1194C5F24F55864DCFA50DE17C9E /* ContentView.swift */,
-				D4B55C86A34442048E34CFE997277E9D /* Managers */,
-				3120F284404B46AEA40B74A15479E39A /* ViewModels */,
-				62B5C88C32F544AF85CCF17E2A2CE316 /* Models */,
-				83C3B16EFEED45EAAB87ADB360FBDA7D /* Views */,
-				481BF5B22FEE8BE4A4154B0B /* Services */,
-				79E9A74333194C17B715EFA2C2E6F8BE /* Extensions */,
-				92FBAED9CF9D4A368447E4566D7F9264 /* Assets.xcassets */,
-				45D31302588846D887C954AC90343832 /* Info.plist */,
-			);
-			path = DualLensPro;
-			sourceTree = "<group>";
-		};
-		D4B55C86A34442048E34CFE997277E9D /* Managers */ = {
-			isa = PBXGroup;
-			children = (
-				BDDC03AB831B3211994AD463 /* HapticManager.swift */,
-				C19AE9C5DF494E8D98E1905E /* SubscriptionManager.swift */,
-				116DC056E3414CA280B0BB4561269946 /* DualCameraManager.swift */,
-			);
-			path = Managers;
+			name = Products;
 			sourceTree = "<group>";
 		};
 		3120F284404B46AEA40B74A15479E39A /* ViewModels */ = {
@@ -146,6 +120,14 @@
 			path = ViewModels;
 			sourceTree = "<group>";
 		};
+		481BF5B22FEE8BE4A4154B0B /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				40AAFA5B7339E6421FC257FE /* PhotoLibraryService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
 		62B5C88C32F544AF85CCF17E2A2CE316 /* Models */ = {
 			isa = PBXGroup;
 			children = (
@@ -156,6 +138,23 @@
 				A8095C99A3EF4910A30AC59CFF8612D1 /* RecordingState.swift */,
 			);
 			path = Models;
+			sourceTree = "<group>";
+		};
+		6E6B8B0F1EFC406AA805416C0E0CD4F1 = {
+			isa = PBXGroup;
+			children = (
+				F93A0B7E7DFB4EAC86682746B1BEA55A /* DualLensPro */,
+				2D23C35F733D4D94B7208682AEFEC8FE /* Products */,
+				FCC9A6A62EADC36500C863CB /* Info.plist */,
+			);
+			sourceTree = "<group>";
+		};
+		79E9A74333194C17B715EFA2C2E6F8BE /* Extensions */ = {
+			isa = PBXGroup;
+			children = (
+				FDB4C09FF5CC46CABF18F52ECC339343 /* GlassEffect.swift */,
+			);
+			path = Extensions;
 			sourceTree = "<group>";
 		};
 		83C3B16EFEED45EAAB87ADB360FBDA7D /* Views */ = {
@@ -182,22 +181,6 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
-		79E9A74333194C17B715EFA2C2E6F8BE /* Extensions */ = {
-			isa = PBXGroup;
-			children = (
-				FDB4C09FF5CC46CABF18F52ECC339343 /* GlassEffect.swift */,
-			);
-			path = Extensions;
-			sourceTree = "<group>";
-		};
-		2D23C35F733D4D94B7208682AEFEC8FE /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				07E300F6722F4BA69CAD6116942BF12B /* DualLensPro.app */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
 		A0A4D566241041E20CCA0562 /* Components */ = {
 			isa = PBXGroup;
 			children = (
@@ -211,12 +194,31 @@
 			path = Components;
 			sourceTree = "<group>";
 		};
-		481BF5B22FEE8BE4A4154B0B /* Services */ = {
+		D4B55C86A34442048E34CFE997277E9D /* Managers */ = {
 			isa = PBXGroup;
 			children = (
-				40AAFA5B7339E6421FC257FE /* PhotoLibraryService.swift */,
+				BDDC03AB831B3211994AD463 /* HapticManager.swift */,
+				C19AE9C5DF494E8D98E1905E /* SubscriptionManager.swift */,
+				116DC056E3414CA280B0BB4561269946 /* DualCameraManager.swift */,
 			);
-			path = Services;
+			path = Managers;
+			sourceTree = "<group>";
+		};
+		F93A0B7E7DFB4EAC86682746B1BEA55A /* DualLensPro */ = {
+			isa = PBXGroup;
+			children = (
+				6204DFF1975846BEA2F90766027AEAB3 /* DualLensProApp.swift */,
+				E13D1194C5F24F55864DCFA50DE17C9E /* ContentView.swift */,
+				D4B55C86A34442048E34CFE997277E9D /* Managers */,
+				3120F284404B46AEA40B74A15479E39A /* ViewModels */,
+				62B5C88C32F544AF85CCF17E2A2CE316 /* Models */,
+				83C3B16EFEED45EAAB87ADB360FBDA7D /* Views */,
+				481BF5B22FEE8BE4A4154B0B /* Services */,
+				79E9A74333194C17B715EFA2C2E6F8BE /* Extensions */,
+				92FBAED9CF9D4A368447E4566D7F9264 /* Assets.xcassets */,
+				45D31302588846D887C954AC90343832 /* Info.plist */,
+			);
+			path = DualLensPro;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -394,6 +396,40 @@
 			};
 			name = Debug;
 		};
+		3B28ECD4C8BF4718BD4860FD6B5390A5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"DualLensPro/Preview Content\"";
+				DEVELOPMENT_TEAM = Y4NZ65U5X7;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = DualLensPro/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "DualLens Pro needs access to both cameras to record dual camera videos";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "DualLens Pro needs access to the microphone to record audio with videos";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "DualLens Pro needs access to save your recorded videos to the photo library";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.duallens.pro;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		482250E6F3A74C2A8F83519F187F14A8 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -449,40 +485,6 @@
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
-		};
-		3B28ECD4C8BF4718BD4860FD6B5390A5 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"DualLensPro/Preview Content\"";
-				DEVELOPMENT_TEAM = Y4NZ65U5X7;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = DualLensPro/Info.plist;
-				INFOPLIST_KEY_NSCameraUsageDescription = "DualLens Pro needs access to both cameras to record dual camera videos";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "DualLens Pro needs access to the microphone to record audio with videos";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "DualLens Pro needs access to save your recorded videos to the photo library";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.duallens.pro;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
 		};
 		D0373B61BB5F4C4381B6F987DD70E736 /* Release */ = {
 			isa = XCBuildConfiguration;

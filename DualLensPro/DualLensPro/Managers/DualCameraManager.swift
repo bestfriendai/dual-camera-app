@@ -297,6 +297,14 @@ class DualCameraManager: NSObject, ObservableObject {
     func setupSession() async throws {
         print("📸 Setting up camera session...")
 
+        // CRITICAL: Prevent duplicate setup - if session is already configured, stop it first
+        if isSessionRunning {
+            print("⚠️ Session already running - stopping before reconfiguration")
+            stopSession()
+            // Wait for session to fully stop
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        }
+
         // Determine if we should use multi-cam or single-cam
         useMultiCam = AVCaptureMultiCamSession.isMultiCamSupported
 
@@ -311,6 +319,13 @@ class DualCameraManager: NSObject, ObservableObject {
             activeSession.commitConfiguration()
             print("✅ Session configuration committed")
         }
+
+        // Clean up any existing inputs/outputs to prevent duplicate connections
+        // This must be done within the configuration block
+        activeSession.inputs.forEach { activeSession.removeInput($0) }
+        activeSession.outputs.forEach { activeSession.removeOutput($0) }
+        activeSession.connections.forEach { activeSession.removeConnection($0) }
+        print("✅ Cleaned up existing session configuration")
 
         if useMultiCam {
             // Setup both cameras for multi-cam mode
@@ -382,16 +397,18 @@ class DualCameraManager: NSObject, ObservableObject {
         // Create input
         let input = try AVCaptureDeviceInput(device: camera)
 
-        guard activeSession.canAddInput(input) else {
-            throw CameraError.cannotAddInput(position)
-        }
-
         if useMultiCam {
             // For multi-cam sessions, use addInputWithNoConnections
+            // Don't check canAddInput for multi-cam - it will return false
             multiCamSession.addInputWithNoConnections(input)
+            print("✅ Added input with no connections for \(position == .front ? "front" : "back") camera")
         } else {
-            // For single-cam sessions, use regular addInput
+            // For single-cam sessions, check and add normally
+            guard singleCamSession.canAddInput(input) else {
+                throw CameraError.cannotAddInput(position)
+            }
             singleCamSession.addInput(input)
+            print("✅ Added input for \(position == .front ? "front" : "back") camera (single-cam mode)")
         }
 
         // Store input reference
@@ -415,13 +432,11 @@ class DualCameraManager: NSObject, ObservableObject {
             videoOutput.videoSettings = videoSettings
         }
 
-        guard activeSession.canAddOutput(videoOutput) else {
-            throw CameraError.cannotAddOutput(position)
-        }
-
         if useMultiCam {
             // For multi-cam sessions, use addOutputWithNoConnections
+            // Don't check canAddOutput for multi-cam
             multiCamSession.addOutputWithNoConnections(videoOutput)
+            print("✅ Added video output with no connections for \(position == .front ? "front" : "back") camera")
 
             // Manually create connection between input and output
             guard let videoPort = input.ports(for: .video, sourceDeviceType: camera.deviceType, sourceDevicePosition: position).first else {
@@ -444,8 +459,12 @@ class DualCameraManager: NSObject, ObservableObject {
                 videoConnection.isVideoMirrored = true
             }
         } else {
-            // For single-cam sessions, use regular addOutput (connections created automatically)
+            // For single-cam sessions, check and add normally
+            guard singleCamSession.canAddOutput(videoOutput) else {
+                throw CameraError.cannotAddOutput(position)
+            }
             singleCamSession.addOutput(videoOutput)
+            print("✅ Added video output for \(position == .front ? "front" : "back") camera (single-cam mode)")
 
             // Configure connection
             if let connection = videoOutput.connection(with: .video) {
@@ -469,29 +488,34 @@ class DualCameraManager: NSObject, ObservableObject {
         let photoOutput = AVCapturePhotoOutput()
         photoOutput.maxPhotoQualityPrioritization = .quality
 
-        guard activeSession.canAddOutput(photoOutput) else {
-            throw CameraError.cannotAddPhotoOutput(position)
-        }
-
         if useMultiCam {
             // For multi-cam sessions, use addOutputWithNoConnections for photo output too
+            // Don't check canAddOutput for multi-cam
             multiCamSession.addOutputWithNoConnections(photoOutput)
+            print("✅ Added photo output with no connections for \(position == .front ? "front" : "back") camera")
 
             // Create connection for photo output
-            guard let videoPort = input.ports(for: .video, sourceDeviceType: camera.deviceType, sourceDevicePosition: position).first else {
+            // We can reuse the same video port for multiple outputs (video + photo)
+            guard let photoPort = input.ports(for: .video, sourceDeviceType: camera.deviceType, sourceDevicePosition: position).first else {
                 throw CameraError.cannotCreateConnection(position)
             }
 
-            let photoConnection = AVCaptureConnection(inputPorts: [videoPort], output: photoOutput)
+            let photoConnection = AVCaptureConnection(inputPorts: [photoPort], output: photoOutput)
 
             guard multiCamSession.canAddConnection(photoConnection) else {
+                print("❌ Cannot add photo connection - connection check failed")
                 throw CameraError.cannotAddPhotoConnection(position)
             }
 
             multiCamSession.addConnection(photoConnection)
+            print("✅ Added photo connection for \(position == .front ? "front" : "back") camera")
         } else {
-            // For single-cam sessions, use regular addOutput (connections created automatically)
+            // For single-cam sessions, check and add normally
+            guard singleCamSession.canAddOutput(photoOutput) else {
+                throw CameraError.cannotAddPhotoOutput(position)
+            }
             singleCamSession.addOutput(photoOutput)
+            print("✅ Added photo output for \(position == .front ? "front" : "back") camera (single-cam mode)")
         }
 
         // Store photo output reference
@@ -528,25 +552,57 @@ class DualCameraManager: NSObject, ObservableObject {
     }
 
     private func createPreviewLayers() async {
-        // Back camera preview (always available)
-        let backLayer = AVCaptureVideoPreviewLayer(session: activeSession)
-        backLayer.videoGravity = .resizeAspectFill
-        if let connection = backLayer.connection {
-            connection.videoOrientation = .portrait
-        }
-        backPreviewLayer = backLayer
-
         if useMultiCam {
-            // Front camera preview (only for multi-cam)
-            let frontLayer = AVCaptureVideoPreviewLayer(session: activeSession)
+            // For multi-cam sessions, MUST use sessionWithNoConnection: to avoid crash
+            // Then manually create connections
+            print("🖼️ Creating multi-cam preview layers with no connections...")
+
+            // Front camera preview layer
+            let frontLayer = AVCaptureVideoPreviewLayer(sessionWithNoConnection: multiCamSession)
             frontLayer.videoGravity = .resizeAspectFill
-            if let connection = frontLayer.connection,
-               let frontInput = frontCameraInput {
-                connection.videoOrientation = .portrait
+
+            // Create connection for front camera
+            if let frontInput = frontCameraInput,
+               let frontPort = frontInput.ports(for: .video, sourceDeviceType: .builtInWideAngleCamera, sourceDevicePosition: .front).first {
+                let frontConnection = AVCaptureConnection(inputPort: frontPort, videoPreviewLayer: frontLayer)
+                frontConnection.videoOrientation = .portrait
+                if frontConnection.isVideoMirroringSupported {
+                    frontConnection.automaticallyAdjustsVideoMirroring = false
+                    frontConnection.isVideoMirrored = true
+                }
+                if multiCamSession.canAddConnection(frontConnection) {
+                    multiCamSession.addConnection(frontConnection)
+                    print("✅ Added front preview layer connection")
+                }
             }
             frontPreviewLayer = frontLayer
+
+            // Back camera preview layer
+            let backLayer = AVCaptureVideoPreviewLayer(sessionWithNoConnection: multiCamSession)
+            backLayer.videoGravity = .resizeAspectFill
+
+            // Create connection for back camera
+            if let backInput = backCameraInput,
+               let backPort = backInput.ports(for: .video, sourceDeviceType: .builtInWideAngleCamera, sourceDevicePosition: .back).first {
+                let backConnection = AVCaptureConnection(inputPort: backPort, videoPreviewLayer: backLayer)
+                backConnection.videoOrientation = .portrait
+                if multiCamSession.canAddConnection(backConnection) { // CHANGED here from singleCamSession.canAddConnection to multiCamSession.canAddConnection
+                    multiCamSession.addConnection(backConnection)
+                    print("✅ Added back preview layer connection")
+                }
+            }
+            backPreviewLayer = backLayer
+
         } else {
-            // For single-cam mode, front preview is nil
+            // For single-cam sessions, use regular session initialization
+            let backLayer = AVCaptureVideoPreviewLayer(session: singleCamSession)
+            backLayer.videoGravity = .resizeAspectFill
+            if let connection = backLayer.connection {
+                connection.videoOrientation = .portrait
+            }
+            backPreviewLayer = backLayer
+
+            // No front preview in single-cam mode
             frontPreviewLayer = nil
         }
     }
@@ -1042,9 +1098,11 @@ class DualCameraManager: NSObject, ObservableObject {
 
     private func finishWriting() async throws {
         // Request background time to complete writing (prevents corruption if app is backgrounded)
-        backgroundTaskID = await UIApplication.shared.beginBackgroundTask { [weak self] in
-            print("⚠️ Background task expired - cleaning up")
-            self?.endBackgroundTask()
+        backgroundTaskID = await MainActor.run { () -> UIBackgroundTaskIdentifier in
+            UIApplication.shared.beginBackgroundTask(withName: "FinishWriting") { [weak self] in
+                print("⚠️ Background task expired - cleaning up")
+                self?.endBackgroundTask()
+            }
         }
 
         // Ensure cleanup happens even if there's an error
@@ -1069,11 +1127,7 @@ class DualCameraManager: NSObject, ObservableObject {
             if let writer = frontAssetWriter {
                 if writer.status == .writing {
                     group.addTask {
-                        await writer.finishWriting()
-                        if writer.status == .failed, let error = writer.error {
-                            print("❌ Front writer failed: \(error.localizedDescription)")
-                            throw error
-                        }
+                        try await self.finishWriter(writer)
                     }
                 } else if writer.status != .completed {
                     // Cancel if not writing and not completed
@@ -1086,11 +1140,7 @@ class DualCameraManager: NSObject, ObservableObject {
             if let writer = backAssetWriter {
                 if writer.status == .writing {
                     group.addTask {
-                        await writer.finishWriting()
-                        if writer.status == .failed, let error = writer.error {
-                            print("❌ Back writer failed: \(error.localizedDescription)")
-                            throw error
-                        }
+                        try await self.finishWriter(writer)
                     }
                 } else if writer.status != .completed {
                     writer.cancelWriting()
@@ -1102,11 +1152,7 @@ class DualCameraManager: NSObject, ObservableObject {
             if let writer = combinedAssetWriter {
                 if writer.status == .writing {
                     group.addTask {
-                        await writer.finishWriting()
-                        if writer.status == .failed, let error = writer.error {
-                            print("❌ Combined writer failed: \(error.localizedDescription)")
-                            throw error
-                        }
+                        try await self.finishWriter(writer)
                     }
                 } else if writer.status != .completed {
                     writer.cancelWriting()
@@ -1117,6 +1163,18 @@ class DualCameraManager: NSObject, ObservableObject {
             // Wait for all writers to finish
             try await group.waitForAll()
             print("✅ All writers finished successfully")
+        }
+    }
+
+    nonisolated private func finishWriter(_ writer: AVAssetWriter) async throws {
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            writer.finishWriting {
+                cont.resume()
+            }
+        }
+        if writer.status == .failed, let error = writer.error {
+            print("❌ Writer failed during finish: \(error.localizedDescription)")
+            throw error
         }
     }
 
@@ -1302,6 +1360,109 @@ class DualCameraManager: NSObject, ObservableObject {
 
         return false
     }
+
+    // MARK: - Video Sample Buffer Handler
+    // Called on writerQueue - thread-safe access to writer state
+    private func handleVideoSampleBuffer(_ sampleBuffer: CMSampleBuffer, isFront: Bool, isBack: Bool) {
+        // Start writing on first video frame
+        if !isWriting && !hasReceivedFirstVideoFrame {
+            hasReceivedFirstVideoFrame = true
+            print("🎬 Starting writers on first video frame")
+
+            let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            recordingStartTime = timestamp
+
+            var allWritersStarted = true
+
+            // Start front writer with validation
+            if let writer = frontAssetWriter, writer.status == .unknown {
+                if writer.startWriting() {
+                    writer.startSession(atSourceTime: timestamp)
+                    print("  ✅ Front writer started")
+                } else {
+                    print("❌ Failed to start front writer: \(writer.error?.localizedDescription ?? "unknown")")
+                    allWritersStarted = false
+                }
+            }
+
+            // Start back writer with validation
+            if let writer = backAssetWriter, writer.status == .unknown {
+                if writer.startWriting() {
+                    writer.startSession(atSourceTime: timestamp)
+                    print("  ✅ Back writer started")
+                } else {
+                    print("❌ Failed to start back writer: \(writer.error?.localizedDescription ?? "unknown")")
+                    allWritersStarted = false
+                }
+            }
+
+            // Start combined writer with validation
+            if let writer = combinedAssetWriter, writer.status == .unknown {
+                if writer.startWriting() {
+                    writer.startSession(atSourceTime: timestamp)
+                    print("  ✅ Combined writer started")
+                } else {
+                    print("❌ Failed to start combined writer: \(writer.error?.localizedDescription ?? "unknown")")
+                    allWritersStarted = false
+                }
+            }
+
+            if allWritersStarted {
+                isWriting = true
+                print("✅ All writers started successfully")
+            } else {
+                if let w = frontAssetWriter, w.status == .writing { w.cancelWriting() }
+                if let w = backAssetWriter, w.status == .writing { w.cancelWriting() }
+                if let w = combinedAssetWriter, w.status == .writing { w.cancelWriting() }
+                isWriting = false
+                recordingStartTime = nil
+                hasReceivedFirstVideoFrame = false
+                hasReceivedFirstAudioFrame = false
+
+                Task { @MainActor in
+                    recordingState = .idle
+                    errorMessage = "Failed to start recording - check available storage"
+                }
+                return
+            }
+        }
+
+        guard isWriting, recordingStartTime != nil else {
+            return
+        }
+
+        // Determine which camera this sample is from and append to appropriate inputs
+        if isFront {
+            if let input = frontVideoInput, input.isReadyForMoreMediaData {
+                if !input.append(sampleBuffer) {
+                    print("⚠️ Failed to append front video sample")
+                    if let writer = frontAssetWriter, writer.status == .failed {
+                        print("❌ Front writer failed: \(writer.error?.localizedDescription ?? "unknown error")")
+                    }
+                }
+            }
+        } else if isBack {
+            // Append to back camera writer
+            if let input = backVideoInput, input.isReadyForMoreMediaData {
+                if !input.append(sampleBuffer) {
+                    print("⚠️ Failed to append back video sample")
+                    if let writer = backAssetWriter, writer.status == .failed {
+                        print("❌ Back writer failed: \(writer.error?.localizedDescription ?? "unknown error")")
+                    }
+                }
+            }
+
+            // Also append to combined output (using back camera video)
+            if let input = combinedVideoInput, input.isReadyForMoreMediaData {
+                if !input.append(sampleBuffer) {
+                    print("⚠️ Failed to append to combined video")
+                    if let writer = combinedAssetWriter, writer.status == .failed {
+                        print("❌ Combined writer failed: \(writer.error?.localizedDescription ?? "unknown error")")
+                    }
+                }
+            }
+        }
+    }
 }
 
 // MARK: - AVCaptureVideoDataOutputSampleBufferDelegate & AVCaptureAudioDataOutputSampleBufferDelegate
@@ -1365,100 +1526,6 @@ extension DualCameraManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCap
                 print("⚠️ Failed to append audio sample")
                 if let writer = combinedAssetWriter, writer.status == .failed {
                     print("❌ Combined writer failed: \(writer.error?.localizedDescription ?? "unknown error")")
-                }
-            }
-        }
-    }
-
-    // Called on writerQueue - thread-safe access to writer state
-    private func handleVideoSampleBuffer(_ sampleBuffer: CMSampleBuffer, isFront: Bool, isBack: Bool) {
-        // Start writing on first video frame
-        if !isWriting && !hasReceivedFirstVideoFrame {
-            hasReceivedFirstVideoFrame = true
-            print("🎬 Starting writers on first video frame")
-
-            let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-            recordingStartTime = timestamp
-
-            var allWritersStarted = true
-
-            // Start front writer with validation
-            if let writer = frontAssetWriter, writer.status == .unknown {
-                if writer.startWriting() {
-                    writer.startSession(atSourceTime: timestamp)
-                    print("  ✅ Front writer started")
-                } else {
-                    print("❌ Failed to start front writer: \(writer.error?.localizedDescription ?? "unknown")")
-                    allWritersStarted = false
-                }
-            }
-
-            // Start back writer with validation
-            if let writer = backAssetWriter, writer.status == .unknown {
-                if writer.startWriting() {
-                    writer.startSession(atSourceTime: timestamp)
-                    print("  ✅ Back writer started")
-                } else {
-                    print("❌ Failed to start back writer: \(writer.error?.localizedDescription ?? "unknown")")
-                    allWritersStarted = false
-                }
-            }
-
-            // Start combined writer with validation
-            if let writer = combinedAssetWriter, writer.status == .unknown {
-                if writer.startWriting() {
-                    writer.startSession(atSourceTime: timestamp)
-                    print("  ✅ Combined writer started")
-                } else {
-                    print("❌ Failed to start combined writer: \(writer.error?.localizedDescription ?? "unknown")")
-                    allWritersStarted = false
-                }
-            }
-
-            if allWritersStarted {
-                isWriting = true
-                print("✅ All writers started successfully")
-            } else {
-                Task { @MainActor in
-                    recordingState = .idle
-                    errorMessage = "Failed to start recording - check available storage"
-                }
-                return
-            }
-        }
-
-        guard isWriting, recordingStartTime != nil else {
-            return
-        }
-
-        // Determine which camera this sample is from and append to appropriate inputs
-        if isFront {
-            if let input = frontVideoInput, input.isReadyForMoreMediaData {
-                if !input.append(sampleBuffer) {
-                    print("⚠️ Failed to append front video sample")
-                    if let writer = frontAssetWriter, writer.status == .failed {
-                        print("❌ Front writer failed: \(writer.error?.localizedDescription ?? "unknown error")")
-                    }
-                }
-            }
-        } else if isBack {
-            // Append to back camera writer
-            if let input = backVideoInput, input.isReadyForMoreMediaData {
-                if !input.append(sampleBuffer) {
-                    print("⚠️ Failed to append back video sample")
-                    if let writer = backAssetWriter, writer.status == .failed {
-                        print("❌ Back writer failed: \(writer.error?.localizedDescription ?? "unknown error")")
-                    }
-                }
-            }
-
-            // Also append to combined output (using back camera video)
-            if let input = combinedVideoInput, input.isReadyForMoreMediaData {
-                if !input.append(sampleBuffer) {
-                    print("⚠️ Failed to append to combined video")
-                    if let writer = combinedAssetWriter, writer.status == .failed {
-                        print("❌ Combined writer failed: \(writer.error?.localizedDescription ?? "unknown error")")
-                    }
                 }
             }
         }
@@ -1619,3 +1686,4 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate, @un
         }
     }
 }
+

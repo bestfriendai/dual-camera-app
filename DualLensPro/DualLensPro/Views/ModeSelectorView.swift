@@ -52,40 +52,41 @@ struct ModeButton: View {
     let isPremium: Bool
     let action: () -> Void
 
+    @State private var isPressed = false
+
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 6) {
-                ZStack(alignment: .topTrailing) {
-                    Image(systemName: mode.systemIconName)
-                        .font(.title2)
-                        .foregroundStyle(isSelected ? (mode == .video ? .black : .white) : .white.opacity(0.6))
+            HStack(spacing: 4) {
+                Text(mode.displayName.uppercased())
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular, design: .default))
+                    .foregroundStyle(isSelected ? .yellow : .white)
+                    .tracking(0.5)
 
-                    // Premium badge
-                    if mode.requiresPremium && !isPremium {
-                        Image(systemName: "crown.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.yellow)
-                            .offset(x: 6, y: -6)
-                    }
+                // Premium badge
+                if mode.requiresPremium && !isPremium {
+                    Image(systemName: "crown.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.yellow)
                 }
-
-                Text(mode.displayName)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(isSelected ? (mode == .video ? .black : .white) : .white.opacity(0.6))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .frame(width: 70)
             }
-            .frame(width: 80, height: 70)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(isSelected ? (mode == .video ? Color.yellow : Color.white.opacity(0.2)) : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(isSelected ? (mode == .video ? Color.yellow.opacity(0.6) : Color.white.opacity(0.4)) : Color.clear, lineWidth: 2)
-            )
+            .padding(.horizontal, isSelected ? 16 : 8)
+            .padding(.vertical, 8)
+            .background {
+                if isSelected {
+                    Capsule()
+                        .fill(.white.opacity(0.15))
+                }
+            }
+            .scaleEffect(isPressed ? 0.95 : 1.0)
         }
+        .buttonStyle(PlainButtonStyle())
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressed = true }
+                .onEnded { _ in isPressed = false }
+        )
+        .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isPressed)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
     }
 }
 

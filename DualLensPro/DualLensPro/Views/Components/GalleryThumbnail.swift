@@ -20,52 +20,36 @@ struct GalleryThumbnail: View {
             onTap()
         }) {
             ZStack {
-                // Background material
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.ultraThinMaterial)
-                    .frame(width: 56, height: 56)
-
                 if let image = thumbnailImage {
                     Image(uiImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 52, height: 52)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .frame(width: 44, height: 44)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
                 } else {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(.ultraThinMaterial)
-                        .frame(width: 52, height: 52)
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(.white.opacity(0.2))
+                        .frame(width: 44, height: 44)
                         .overlay {
-                            Image(systemName: "photo.stack")
-                                .font(.system(size: 22))
-                                .foregroundStyle(.white.opacity(0.7))
+                            Image(systemName: "photo")
+                                .font(.system(size: 20))
+                                .foregroundStyle(.white.opacity(0.8))
                         }
                 }
 
-                // Liquid glass border
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [
-                                .white.opacity(0.5),
-                                .white.opacity(0.2)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 2
-                    )
-                    .frame(width: 56, height: 56)
+                // Simple border
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(.white.opacity(0.3), lineWidth: 1.5)
+                    .frame(width: 44, height: 44)
             }
-            .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
         }
-        .scaleEffect(isPressed ? 0.92 : 1.0)
+        .scaleEffect(isPressed ? 0.9 : 1.0)
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in isPressed = true }
                 .onEnded { _ in isPressed = false }
         )
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isPressed)
+        .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isPressed)
         .onAppear {
             loadLatestPhoto()
         }

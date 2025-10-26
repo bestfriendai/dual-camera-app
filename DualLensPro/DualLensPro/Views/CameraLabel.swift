@@ -13,18 +13,26 @@ struct CameraLabel: View {
     let zoom: CGFloat
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 6) {
             Text(text)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.white)
 
-            Text(String(format: "%.1f×", zoom))
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.9))
+            Text(String(format: "%.1fx", zoom))
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.7))
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .liquidGlass(tint: .black, opacity: 0.35)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background {
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    Capsule()
+                        .fill(.black.opacity(0.3))
+                }
+        }
+        .shadow(color: .black.opacity(0.2), radius: 4, y: 1)
     }
 }
 

@@ -8,6 +8,85 @@
 
 import SwiftUI
 
+// MARK: - Top Toolbar Component
+private struct TopToolbar: View {
+    @EnvironmentObject var viewModel: CameraViewModel
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // Flash Button
+            Button(action: {
+                HapticManager.shared.light()
+                // Toggle flash (implement flash toggle in view model)
+            }) {
+                Image(systemName: "bolt.slash.fill")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+            }
+
+            Divider()
+                .background(.white.opacity(0.3))
+                .frame(height: 20)
+
+            // Timer Button
+            Button(action: {
+                HapticManager.shared.light()
+                // Cycle through timer options (0, 3, 10 seconds)
+                let timerOptions = [0, 3, 10]
+                if let currentIndex = timerOptions.firstIndex(of: viewModel.timerDuration) {
+                    let nextIndex = (currentIndex + 1) % timerOptions.count
+                    viewModel.setTimer(timerOptions[nextIndex])
+                }
+            }) {
+                ZStack {
+                    if viewModel.timerDuration > 0 {
+                        Image(systemName: "timer")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(.yellow)
+                    } else {
+                        Image(systemName: "timer")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .frame(width: 40, height: 40)
+            }
+
+            Divider()
+                .background(.white.opacity(0.3))
+                .frame(height: 20)
+
+            // Grid/More Button
+            Button(action: {
+                HapticManager.shared.light()
+                viewModel.toggleGrid()
+            }) {
+                Image(systemName: viewModel.showGrid ? "circle.grid.3x3.fill" : "circle.grid.3x3")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(viewModel.showGrid ? .yellow : .white)
+                    .frame(width: 40, height: 40)
+            }
+        }
+        .background {
+            if !reduceTransparency {
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .overlay {
+                        Capsule()
+                            .fill(.black.opacity(0.2))
+                    }
+            } else {
+                Capsule()
+                    .fill(.black.opacity(0.6))
+            }
+        }
+        .frame(height: 40)
+        .shadow(color: .black.opacity(0.2), radius: 8, y: 2)
+    }
+}
+
 struct DualCameraView: View {
     @EnvironmentObject var viewModel: CameraViewModel
     @State private var frontCameraFrame: CGRect = .zero
@@ -18,7 +97,18 @@ struct DualCameraView: View {
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                if viewModel.cameraManager.isMultiCamSupported {
+                // Show loading indicator while camera is initializing
+                if !viewModel.isCameraReady {
+                    VStack(spacing: 20) {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(1.5)
+
+                        Text("Initializing Camera...")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.8))
+                    }
+                } else if viewModel.cameraManager.isMultiCamSupported {
                     // Dual camera mode
                     VStack(spacing: 0) {
                         // Back Camera (Top)
@@ -39,13 +129,15 @@ struct DualCameraView: View {
                         }
                         .frame(height: geometry.size.height * 0.5)
                         .overlay(alignment: .topLeading) {
-                            CameraLabel(text: "Back Camera", zoom: viewModel.configuration.backZoomFactor)
-                                .padding()
+                            CameraLabel(text: "Back", zoom: viewModel.configuration.backZoomFactor)
+                                .padding(.top, 8)
+                                .padding(.leading, 12)
                         }
                         .overlay(alignment: .topTrailing) {
                             if viewModel.isRecording {
                                 RecordingIndicator(duration: viewModel.recordingDuration)
-                                    .padding()
+                                    .padding(.top, 8)
+                                    .padding(.trailing, 12)
                             }
                         }
 
@@ -72,8 +164,9 @@ struct DualCameraView: View {
                         }
                         .frame(height: geometry.size.height * 0.5)
                         .overlay(alignment: .bottomLeading) {
-                            CameraLabel(text: "Front Camera", zoom: viewModel.configuration.frontZoomFactor)
-                                .padding()
+                            CameraLabel(text: "Front", zoom: viewModel.configuration.frontZoomFactor)
+                                .padding(.bottom, 8)
+                                .padding(.leading, 12)
                         }
                     }
                 } else {
@@ -111,72 +204,73 @@ struct DualCameraView: View {
                     .overlay(alignment: .topTrailing) {
                         if viewModel.isRecording {
                             RecordingIndicator(duration: viewModel.recordingDuration)
-                                .padding()
+                                .padding(.top, 8)
+                                .padding(.trailing, 12)
                         }
                     }
                 }
-                
-                // Top Overlay - Timer and Premium Banner
-                VStack(spacing: 16) {
-                    // Timer Display at very top
-                    TimerDisplay(duration: viewModel.recordingDuration)
-                        .padding(.top, 12)
 
-                    // Premium Upgrade Banner
-                    if !viewModel.isRecording && !viewModel.isPremium {
-                        PremiumUpgradeButton(maxDuration: "3 Minutes") {
-                            viewModel.showPremiumUpgrade = true
+                // Only show UI controls when camera is ready
+                if viewModel.isCameraReady {
+                    // Top Overlay - Toolbar and Timer
+                    VStack(spacing: 12) {
+                        HStack {
+                            Spacer()
+
+                            // Top Toolbar (right side)
+                            TopToolbar()
+                                .padding(.top, 8)
+                                .padding(.trailing, 12)
                         }
-                        .padding(.top, 4)
+
+                        // Timer Display - only show when recording
+                        if viewModel.isRecording {
+                            TimerDisplay(duration: viewModel.recordingDuration)
+                        }
+
+                        Spacer()
                     }
 
-                    Spacer()
-                }
-
-                // Right Side - Zoom Control
-                VStack {
-                    Spacer()
-
-                    HStack {
+                    // Zoom Control - Above bottom controls
+                    VStack {
                         Spacer()
 
                         ZoomControl(
                             currentZoom: viewModel.configuration.backZoomFactor,
-                            availableZooms: [0.5, 1.0, 2.0, 3.0],
+                            availableZooms: [0.5, 1.0, 2.0],
                             onZoomChange: { factor in
                                 viewModel.updateBackZoom(factor)
                             }
                         )
-                        .padding(.trailing, 24)
-                        .padding(.bottom, 220)
+                        .padding(.bottom, 12)
                     }
-                }
 
-                // Controls Overlay
-                VStack {
-                    Spacer()
+                    // Controls Overlay
+                    VStack {
+                        Spacer()
 
-                    if viewModel.controlsVisible {
-                        ControlPanel()
-                            .environmentObject(viewModel)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                }
-
-                // Timer Countdown Overlay
-                if viewModel.showTimerCountdown {
-                    TimerCountdownView(
-                        duration: viewModel.timerCountdownDuration,
-                        onComplete: {
-                            viewModel.showTimerCountdown = false
-                            viewModel.executePhotoCapture()
-                        },
-                        onCancel: {
-                            viewModel.cancelTimerCountdown()
+                        if viewModel.controlsVisible {
+                            ControlPanel()
+                                .environmentObject(viewModel)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
-                    )
-                    .transition(.opacity)
-                    .zIndex(100)
+                    }
+
+                    // Timer Countdown Overlay
+                    if viewModel.showTimerCountdown {
+                        TimerCountdownView(
+                            duration: viewModel.timerCountdownDuration,
+                            onComplete: {
+                                viewModel.showTimerCountdown = false
+                                viewModel.executePhotoCapture()
+                            },
+                            onCancel: {
+                                viewModel.cancelTimerCountdown()
+                            }
+                        )
+                        .transition(.opacity)
+                        .zIndex(100)
+                    }
                 }
             }
             .onTapGesture {

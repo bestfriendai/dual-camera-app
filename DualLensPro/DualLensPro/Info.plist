@@ -9,6 +9,8 @@
 	<string>DualLens Pro needs access to the microphone to record audio with videos</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>DualLens Pro needs access to save your recorded videos to the photo library</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>DualLens Pro needs access to your photo library to view and manage your videos</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

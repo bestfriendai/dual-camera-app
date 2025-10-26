@@ -13,42 +13,30 @@ struct RecordingIndicator: View {
     @State private var isAnimating = false
     
     var body: some View {
-        HStack(spacing: 10) {
-            // Pulsing dot with glow
-            ZStack {
-                // Glow effect
-                Circle()
-                    .fill(.red.opacity(0.4))
-                    .frame(width: 14, height: 14)
-                    .scaleEffect(isAnimating ? 1.5 : 1.0)
-                    .opacity(isAnimating ? 0 : 0.6)
-
-                // Main dot
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [.red.opacity(0.9), .red],
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: 5
-                        )
-                    )
-                    .frame(width: 10, height: 10)
-            }
-            .onAppear {
-                withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: false)) {
-                    isAnimating = true
+        HStack(spacing: 8) {
+            // Pulsing red dot
+            Circle()
+                .fill(.red)
+                .frame(width: 8, height: 8)
+                .opacity(isAnimating ? 0.4 : 1.0)
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                        isAnimating = true
+                    }
                 }
-            }
 
             // Time
             Text(formatTime(duration))
-                .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                .font(.system(size: 14, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .liquidGlass(tint: .red, opacity: 0.25)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background {
+            Capsule()
+                .fill(.red.opacity(0.9))
+        }
+        .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
     }
     
     private func formatTime(_ time: TimeInterval) -> String {

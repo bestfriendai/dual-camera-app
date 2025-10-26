@@ -12,6 +12,7 @@ import Combine
 @MainActor
 class CameraViewModel: ObservableObject {
     @Published var isAuthorized = false
+    @Published var isCameraReady = false // New flag to track if camera is fully initialized
     @Published var cameraManager = DualCameraManager()
     @Published var configuration = CameraConfiguration()
     @Published var showError = false
@@ -75,6 +76,7 @@ class CameraViewModel: ObservableObject {
     // MARK: - Initialization
     private var recordingMonitorTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
+    private var isSettingUpCamera = false // Prevent duplicate setup calls
 
     init() {
         // Load default capture mode from settings
@@ -82,6 +84,14 @@ class CameraViewModel: ObservableObject {
            let mode = CaptureMode(rawValue: modeString) {
             currentCaptureMode = mode
         }
+
+        // Check authorization status synchronously to avoid flashing permission view
+        let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+        let audioStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        self.isAuthorized = (cameraStatus == .authorized && audioStatus == .authorized)
+
+        print("🔐 Init - Camera: \(cameraStatus.rawValue), Audio: \(audioStatus.rawValue)")
+        print("🔐 Init - isAuthorized set to: \(self.isAuthorized)")
 
         // Bridge manager errors to VM so UI can display them
         cameraManager.$errorMessage
@@ -147,12 +157,36 @@ class CameraViewModel: ObservableObject {
 
     // MARK: - Camera Setup
     private func setupCamera() async {
+        // Prevent duplicate setup calls
+        guard !isSettingUpCamera else {
+            print("⚠️ setupCamera already in progress - skipping duplicate call")
+            return
+        }
+
+        isSettingUpCamera = true
+        defer { isSettingUpCamera = false }
+
+        print("🎥 setupCamera - Starting camera setup...")
+        print("🎥 Multi-cam supported: \(cameraManager.isMultiCamSupported)")
+        print("🎥 Session running: \(cameraManager.isSessionRunning)")
+
         do {
-            print("🎥 setupCamera - Starting camera setup...")
+            print("🎥 Calling cameraManager.setupSession()...")
             try await cameraManager.setupSession()
             print("✅ setupCamera - Session setup complete")
+
+            print("🎥 Calling cameraManager.startSession()...")
             cameraManager.startSession()
             print("✅ setupCamera - Session started")
+
+            // Wait a moment for session to actually start and preview layers to be ready
+            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+
+            print("🎥 Session running after start: \(cameraManager.isSessionRunning)")
+
+            // Mark camera as ready for UI
+            self.isCameraReady = true
+            print("✅ Camera ready flag set to true")
 
             // NOW it's safe to start the recording monitor after camera is fully set up
             if recordingMonitorTask == nil {
@@ -161,21 +195,31 @@ class CameraViewModel: ObservableObject {
             }
             print("✅ setupCamera - All setup complete!")
         } catch {
-            print("❌ setupCamera ERROR: \(error.localizedDescription)")
+            print("❌ ========== CAMERA SETUP ERROR ==========")
+            print("❌ Error description: \(error.localizedDescription)")
             print("❌ Error type: \(type(of: error))")
-            print("❌ Error details: \(error)")
+            print("❌ Full error: \(error)")
+
+            // Print stack trace if available
+            if let nsError = error as NSError? {
+                print("❌ Domain: \(nsError.domain)")
+                print("❌ Code: \(nsError.code)")
+                print("❌ UserInfo: \(nsError.userInfo)")
+            }
+            print("❌ ========================================")
 
             // Set specific error message based on error type
             let errorText: String
             if let cameraError = error as? CameraError {
-                errorText = cameraError.localizedDescription
+                errorText = "Camera Error: \(cameraError.localizedDescription)"
             } else {
                 errorText = "Camera setup failed: \(error.localizedDescription)"
             }
 
             setError(errorText)
 
-            // CRITICAL: Set isAuthorized to false so ContentView shows error
+            // CRITICAL: Reset states so user can retry
+            isCameraReady = false
             isAuthorized = false
         }
     }

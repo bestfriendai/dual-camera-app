@@ -11,75 +11,73 @@ struct ZoomControl: View {
     let currentZoom: CGFloat
     let availableZooms: [CGFloat]
     let onZoomChange: (CGFloat) -> Void
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ForEach(availableZooms, id: \.self) { zoom in
+                ZoomLevelButton(
+                    zoom: zoom,
+                    isSelected: abs(currentZoom - zoom) < 0.01,
+                    action: {
+                        HapticManager.shared.zoomChange()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            onZoomChange(zoom)
+                        }
+                    }
+                )
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background {
+            if !reduceTransparency {
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .overlay {
+                        Capsule()
+                            .fill(.black.opacity(0.2))
+                    }
+            } else {
+                Capsule()
+                    .fill(.black.opacity(0.6))
+            }
+        }
+        .shadow(color: .black.opacity(0.2), radius: 8, y: 2)
+    }
+}
+
+private struct ZoomLevelButton: View {
+    let zoom: CGFloat
+    let isSelected: Bool
+    let action: () -> Void
 
     @State private var isPressed = false
 
     var body: some View {
-        Button(action: {
-            HapticManager.shared.zoomChange()
-            cycleZoom()
-        }) {
+        Button(action: action) {
             Text(zoomText)
-                .font(.system(size: 17, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .frame(width: 64, height: 64)
-                .background {
-                    ZStack {
-                        Circle()
-                            .fill(.ultraThinMaterial)
-
-                        RadialGradient(
-                            colors: [
-                                .white.opacity(0.25),
-                                .white.opacity(0.05)
-                            ],
-                            center: .topLeading,
-                            startRadius: 0,
-                            endRadius: 32
-                        )
-
-                        Circle()
-                            .strokeBorder(
-                                LinearGradient(
-                                    colors: [
-                                        .white.opacity(0.5),
-                                        .white.opacity(0.2)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 2
-                            )
-                    }
-                    .shadow(color: .black.opacity(0.25), radius: 10, y: 5)
-                }
+                .font(.system(size: 16, weight: isSelected ? .semibold : .regular, design: .rounded))
+                .foregroundStyle(isSelected ? .yellow : .white)
+                .frame(minWidth: 32)
+                .scaleEffect(isPressed ? 0.9 : 1.0)
         }
-        .scaleEffect(isPressed ? 0.92 : 1.0)
+        .buttonStyle(PlainButtonStyle())
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in isPressed = true }
                 .onEnded { _ in isPressed = false }
         )
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isPressed)
-        .animation(.spring(response: 0.4, dampingFraction: 0.65), value: currentZoom)
+        .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isPressed)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
     }
 
     private var zoomText: String {
-        if currentZoom < 1.0 {
-            return String(format: "%.1fx", currentZoom)
+        if zoom < 1.0 {
+            return String(format: ".%.0f", zoom * 10)
         } else {
-            return String(format: "%.0fx", currentZoom)
+            return String(format: "%.0f", zoom)
         }
-    }
-
-    private func cycleZoom() {
-        guard let currentIndex = availableZooms.firstIndex(where: { abs($0 - currentZoom) < 0.01 }) else {
-            onZoomChange(availableZooms.first ?? 1.0)
-            return
-        }
-
-        let nextIndex = (currentIndex + 1) % availableZooms.count
-        onZoomChange(availableZooms[nextIndex])
     }
 }
 

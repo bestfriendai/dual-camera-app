@@ -13,6 +13,7 @@ struct PermissionView: View {
     @Binding var showAlert: Bool
     @State private var isRequesting = false
     @State private var debugInfo: String = ""
+    @EnvironmentObject var cameraViewModel: CameraViewModel
 
     var body: some View {
         VStack(spacing: 30) {
@@ -94,11 +95,31 @@ struct PermissionView: View {
                     .padding(.horizontal)
             }
 
+            // Show camera error from ViewModel
+            if !cameraViewModel.errorMessage.isEmpty {
+                VStack(spacing: 8) {
+                    Text("Camera Setup Error:")
+                        .font(.caption.bold())
+                        .foregroundStyle(.red)
+
+                    Text(cameraViewModel.errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                }
+                .padding()
+                .background(.red.opacity(0.2))
+                .cornerRadius(12)
+                .padding(.horizontal, 20)
+            }
+
             // Try Again button (for debugging)
-            if debugInfo.contains("granted") {
+            if debugInfo.contains("granted") || !cameraViewModel.errorMessage.isEmpty {
                 Button(action: {
                     print("🔄 Manual retry button tapped")
-                    // This will be handled by ContentView's polling
+                    // Trigger checkAuthorization
+                    NotificationCenter.default.post(name: .init("ForceCheckAuthorization"), object: nil)
                 }) {
                     Text("Try Again / Refresh")
                         .font(.caption)
@@ -140,6 +161,16 @@ struct PermissionView: View {
 
         print("📊 Before request - Camera: \(statusString(cameraStatus)), Mic: \(statusString(audioStatus))")
 
+        // If already authorized, trigger camera initialization directly
+        if cameraStatus == .authorized && audioStatus == .authorized {
+            print("✅ Permissions already granted - triggering camera initialization via notification")
+            debugInfo = "Permissions already granted! Initializing camera..."
+
+            // Post notification to trigger camera initialization in ContentView
+            NotificationCenter.default.post(name: .init("ForceCheckAuthorization"), object: nil)
+            return
+        }
+
         // If already denied, must go to Settings
         if cameraStatus == .denied || audioStatus == .denied {
             print("⚠️ Permissions already denied - must use Settings")
@@ -176,8 +207,10 @@ struct PermissionView: View {
                 } else {
                     print("✅ All permissions granted - ContentView should detect this")
                     debugInfo = "Permissions granted!"
+
+                    // Post notification to trigger camera initialization
+                    NotificationCenter.default.post(name: .init("ForceCheckAuthorization"), object: nil)
                 }
-                // If both granted, ContentView will automatically detect this via checkAuthorization()
             }
         }
     }
