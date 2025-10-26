@@ -51,6 +51,9 @@ actor RecordingCoordinator {
     // Buffer cache for compositing
     private var lastFrontBuffer: (buffer: CVPixelBuffer, time: CMTime)?
 
+    // Audio sample counter for logging
+    private var audioSampleCount = 0
+
     // MARK: - Configuration
     func configure(
         frontURL: URL,
@@ -252,21 +255,32 @@ actor RecordingCoordinator {
     }
 
     func appendAudioSample(_ sampleBuffer: CMSampleBuffer) throws {
-        guard isWriting else { return }
+        guard isWriting else {
+            print("⚠️ Audio sample received but not writing")
+            return
+        }
 
         guard let input = combinedAudioInput else {
+            print("⚠️ No audio input configured")
             return
         }
 
         // ✅ Check if input is ready
         guard input.isReadyForMoreMediaData else {
-            // print("⚠️ Audio input not ready - dropping sample")
+            print("⚠️ Audio input not ready - dropping sample")
             return
         }
 
-        if !input.append(sampleBuffer) {
+        if input.append(sampleBuffer) {
+            // Success - only log occasionally to avoid spam
+            if audioSampleCount % 100 == 0 {
+                let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                print("🎤 Audio sample \(audioSampleCount) appended at \(time.seconds)s")
+            }
+            audioSampleCount += 1
+        } else {
             let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-            print("⚠️ Failed to append audio sample at \(time.seconds)s")
+            print("❌ Failed to append audio sample at \(time.seconds)s")
         }
     }
 

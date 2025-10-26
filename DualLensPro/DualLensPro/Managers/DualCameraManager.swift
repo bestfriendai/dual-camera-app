@@ -1209,13 +1209,13 @@ class DualCameraManager: NSObject, ObservableObject {
         let transform: CGAffineTransform
         switch orientation {
         case .portrait:
-            // Device held upright - rotate 90° clockwise to make video upright
-            transform = CGAffineTransform(rotationAngle: -.pi / 2)
-            print("🔄 Using -90° (clockwise) transform for portrait")
-        case .portraitUpsideDown:
-            // Device upside down - rotate 90° counter-clockwise
+            // Device held upright - rotate 90° counter-clockwise to match preview
             transform = CGAffineTransform(rotationAngle: .pi / 2)
-            print("🔄 Using 90° (counter-clockwise) transform for portrait upside down")
+            print("🔄 Using 90° (counter-clockwise) transform for portrait")
+        case .portraitUpsideDown:
+            // Device upside down - rotate 90° clockwise
+            transform = CGAffineTransform(rotationAngle: -.pi / 2)
+            print("🔄 Using -90° (clockwise) transform for portrait upside down")
         case .landscapeLeft:
             // Device rotated left (home button on left) - no rotation needed
             transform = .identity
@@ -1226,8 +1226,8 @@ class DualCameraManager: NSObject, ObservableObject {
             print("🔄 Using 180° transform for landscape right")
         default:
             // Default to portrait if orientation is unknown/face up/face down
-            transform = CGAffineTransform(rotationAngle: -.pi / 2)
-            print("🔄 Using -90° (clockwise) transform for default/unknown orientation")
+            transform = CGAffineTransform(rotationAngle: .pi / 2)
+            print("🔄 Using 90° (counter-clockwise) transform for default/unknown orientation")
         }
 
         return transform
@@ -1292,26 +1292,43 @@ class DualCameraManager: NSObject, ObservableObject {
         }
 
         // Get recording parameters
-        let dimensions = recordingQuality.dimensions
+        let baseDimensions = recordingQuality.dimensions
         let bitRate = recordingQuality.bitRate
         let frameRate = captureMode.frameRate  // ✅ Get dynamic frame rate from capture mode
-        let transform = currentVideoTransform()  // ✅ Get current orientation transform
 
-        print("🎬 Setting up writers with \(frameRate)fps and transform: \(transform)")
+        // ✅ Determine if we need to swap dimensions based on orientation
+        let orientation = UIDevice.current.orientation
+        let isPortrait = orientation == .portrait || orientation == .portraitUpsideDown ||
+                        orientation == .unknown || orientation == .faceUp || orientation == .faceDown
+
+        // ✅ Swap dimensions for portrait mode (1080x1920 instead of 1920x1080)
+        let dimensions: (width: Int, height: Int)
+        if isPortrait {
+            dimensions = (width: baseDimensions.height, height: baseDimensions.width)
+            print("📱 Portrait mode: Using dimensions \(dimensions.width)x\(dimensions.height)")
+        } else {
+            dimensions = (width: baseDimensions.width, height: baseDimensions.height)
+            print("📱 Landscape mode: Using dimensions \(dimensions.width)x\(dimensions.height)")
+        }
+
+        // ✅ Use identity transform since dimensions are already correct
+        let transform = CGAffineTransform.identity
+
+        print("🎬 Setting up writers with \(frameRate)fps, dimensions: \(dimensions.width)x\(dimensions.height)")
 
         // Create the RecordingCoordinator actor
         let coordinator = RecordingCoordinator()
         self.recordingCoordinator = coordinator
 
-        // Configure the coordinator (thread-safe setup) with orientation transform
+        // Configure the coordinator (thread-safe setup) with correct dimensions
         try await coordinator.configure(
             frontURL: frontURL,
             backURL: backURL,
             combinedURL: combinedURL,
-            dimensions: (width: dimensions.width, height: dimensions.height),
+            dimensions: dimensions,
             bitRate: bitRate,
             frameRate: frameRate,  // ✅ Pass dynamic frame rate
-            videoTransform: transform  // ✅ Pass orientation transform
+            videoTransform: transform  // ✅ Identity transform (dimensions handle orientation)
         )
 
         print("✅ RecordingCoordinator configured and ready")
@@ -1816,14 +1833,15 @@ extension DualCameraManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCap
 
     // Called on writerQueue - thread-safe access to writer state
     nonisolated private func handleAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
-        // Start writers on first audio sample if not started yet
-        if !isWriting && !hasReceivedFirstAudioFrame {
+        // Mark that we've received audio
+        if !hasReceivedFirstAudioFrame {
             hasReceivedFirstAudioFrame = true
-            // Don't start yet, wait for video frame
-            return
+            print("🎤 First audio frame received")
         }
 
+        // Wait for writing to start (video frame triggers this)
         guard isWriting, recordingStartTime != nil else {
+            // print("⏸️ Audio sample received but not writing yet")
             return
         }
 

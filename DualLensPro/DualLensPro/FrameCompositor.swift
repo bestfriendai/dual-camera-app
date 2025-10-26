@@ -219,16 +219,23 @@ final class FrameCompositor {
         let imageSize = image.extent.size
         let scaleX = width / imageSize.width
         let scaleY = height / imageSize.height
-        let scale = min(scaleX, scaleY)
-        
+
+        // ✅ Use max to fill the entire space (aspect fill), not min (aspect fit)
+        let scale = max(scaleX, scaleY)
+
         let scaledImage = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        
-        // Center the image
+
+        // Center the image and crop to fit
         let scaledSize = scaledImage.extent.size
         let offsetX = (width - scaledSize.width) / 2
         let offsetY = (height - scaledSize.height) / 2
-        
-        return scaledImage.transformed(by: CGAffineTransform(translationX: offsetX, y: offsetY))
+
+        // Translate to center
+        let centeredImage = scaledImage.transformed(by: CGAffineTransform(translationX: offsetX, y: offsetY))
+
+        // Crop to exact dimensions
+        let cropRect = CGRect(x: 0, y: 0, width: width, height: height)
+        return centeredImage.cropped(to: cropRect)
     }
 }
 
