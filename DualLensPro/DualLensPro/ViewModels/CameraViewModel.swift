@@ -8,6 +8,7 @@
 import SwiftUI
 import AVFoundation
 import Combine
+import Photos
 
 @MainActor
 class CameraViewModel: ObservableObject {
@@ -29,6 +30,8 @@ class CameraViewModel: ObservableObject {
     // Managers & Services
     @Published var subscriptionManager = SubscriptionManager()
     @Published var photoLibraryService = PhotoLibraryService()
+    // TODO: Add AnalyticsService to Xcode project and uncomment
+    // private let analytics = AnalyticsService.shared
     lazy var settingsViewModel: SettingsViewModel = {
         SettingsViewModel(configuration: configuration)
     }()
@@ -195,6 +198,7 @@ class CameraViewModel: ObservableObject {
             return
         }
 
+        let setupStartTime = Date().timeIntervalSince1970
         isSettingUpCamera = true
         defer { isSettingUpCamera = false }
 
@@ -234,6 +238,12 @@ class CameraViewModel: ObservableObject {
                 print("✅ setupCamera - Recording monitor started")
             }
             print("✅ setupCamera - All setup complete!")
+
+            // TODO: Re-enable analytics when AnalyticsService is added to project
+            // analytics.trackCameraSetupCompleted(
+            //     multiCamSupported: cameraManager.isMultiCamSupported,
+            //     duration: Date().timeIntervalSince1970 - setupStartTime
+            // )
         } catch {
             print("❌ ========== CAMERA SETUP ERROR ==========")
             print("❌ Error description: \(error.localizedDescription)")
@@ -370,6 +380,36 @@ class CameraViewModel: ObservableObject {
         print("📹 isCameraReady: \(isCameraReady)")
         print("📹 Current isRecording state: \(isRecording)")
 
+        // ✅ CRITICAL FIX: Check Photos permission BEFORE recording starts
+        let photosStatus = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+        print("📸 Photos authorization status: \(photosStatus.rawValue)")
+
+        if photosStatus != .authorized && photosStatus != .limited {
+            print("❌ Photos permission not granted - requesting...")
+            let newStatus = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+
+            guard newStatus == .authorized || newStatus == .limited else {
+                print("❌ Photos permission denied - cannot save videos")
+                HapticManager.shared.error()
+                throw CameraRecordingError.photosNotAuthorized
+            }
+            print("✅ Photos permission granted")
+        }
+
+        // ✅ CRITICAL FIX: Check available storage space
+        if let availableSpace = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory())[.systemFreeSize] as? Int64 {
+            let availableGB = Double(availableSpace) / 1_073_741_824 // Convert to GB
+            print("💾 Available storage: \(String(format: "%.2f", availableGB)) GB")
+
+            // Require at least 500 MB free space (conservative estimate for 3-minute dual camera recording)
+            let requiredBytes: Int64 = 500_000_000 // 500 MB
+            guard availableSpace > requiredBytes else {
+                print("❌ Insufficient storage - need at least 500 MB")
+                HapticManager.shared.error()
+                throw CameraRecordingError.insufficientStorage
+            }
+        }
+
         // Check if user can record (premium check)
         guard canRecord else {
             print("❌ Cannot record - premium check failed")
@@ -393,6 +433,13 @@ class CameraViewModel: ObservableObject {
         HapticManager.shared.recordingStart()
 
         print("📹 About to call cameraManager.startRecording()...")
+
+        // TODO: Re-enable analytics when AnalyticsService is added to project
+        // analytics.trackRecordingStarted(
+        //     mode: currentCaptureMode.rawValue,
+        //     quality: recordingQuality.rawValue
+        // )
+
         try await cameraManager.startRecording()
         print("✅ cameraManager.startRecording() completed")
         print("📹 New isRecording state: \(isRecording)")
@@ -404,6 +451,14 @@ class CameraViewModel: ObservableObject {
         HapticManager.shared.recordingStop()
 
         try await cameraManager.stopRecording()
+
+        // TODO: Re-enable analytics when AnalyticsService is added to project
+        // analytics.trackRecordingCompleted(
+        //     duration: recordingDuration,
+        //     mode: currentCaptureMode.rawValue,
+        //     quality: recordingQuality.rawValue
+        // )
+
         subscriptionManager.resetRecordingDuration()
 
         // Success haptic
@@ -694,6 +749,8 @@ class CameraViewModel: ObservableObject {
 enum CameraRecordingError: LocalizedError {
     case recordingLimitReached
     case invalidModeForRecording
+    case photosNotAuthorized
+    case insufficientStorage
 
     var errorDescription: String? {
         switch self {
@@ -701,6 +758,10 @@ enum CameraRecordingError: LocalizedError {
             return "Recording limit reached. Upgrade to Premium for unlimited recording."
         case .invalidModeForRecording:
             return "This capture mode does not support recording."
+        case .photosNotAuthorized:
+            return "Photos access is required to save videos. Please grant permission in Settings."
+        case .insufficientStorage:
+            return "Not enough storage space. Please free up at least 500 MB to record."
         }
     }
 }
