@@ -331,6 +331,10 @@ actor RecordingCoordinator {
 
         isWriting = false
 
+        // ✅ CRITICAL FIX: Add a small delay to allow final frames to be processed
+        // This prevents the last few frames from being frozen/corrupted
+        try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+
         // Mark all inputs as finished (video + audio for all three writers)
         frontVideoInput?.markAsFinished()
         frontAudioInput?.markAsFinished()
@@ -338,6 +342,10 @@ actor RecordingCoordinator {
         backAudioInput?.markAsFinished()
         combinedVideoInput?.markAsFinished()
         combinedAudioInput?.markAsFinished()
+
+        // ✅ CRITICAL FIX: Add another small delay after marking inputs as finished
+        // This ensures all pending data is flushed before finishing writers
+        try await Task.sleep(nanoseconds: 50_000_000) // 0.05 seconds
 
         // Finish all writers concurrently
         // Box writers for safe transfer across task boundaries

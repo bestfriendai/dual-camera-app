@@ -408,6 +408,16 @@ class DualCameraManager: NSObject, ObservableObject {
         await createPreviewLayers()
         print("✅ Preview layers created")
 
+        // ✅ Sync zoom factors with actual camera minimums for widest FOV
+        if let frontDevice = frontCameraInput?.device {
+            frontZoomFactor = frontDevice.minAvailableVideoZoomFactor
+            print("📸 Front camera zoom synced to min: \(frontZoomFactor)x for widest FOV")
+        }
+        if let backDevice = backCameraInput?.device {
+            backZoomFactor = backDevice.minAvailableVideoZoomFactor
+            print("📸 Back camera zoom synced to min: \(backZoomFactor)x")
+        }
+
         // Mark camera setup as complete - now safe to update zoom and other camera properties
         isCameraSetupComplete = true
         print("✅ Camera setup complete - zoom updates now enabled (will apply after session starts)")
@@ -1188,42 +1198,25 @@ class DualCameraManager: NSObject, ObservableObject {
 
         print("🛑 Stopping recording...")
 
-        // ✅ First, stop accepting new audio so video can catch up to the last audio PTS
-        print("⏳ Stopping audio first, allowing video to catch up (0.3s)...")
-        dropAudioDuringStop = true
-        try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
-
-        // Optional: log PTS difference for diagnostics
-        if let v = lastVideoPTS, let a = lastAudioPTS {
-            let delta = CMTimeSubtract(a, v)
-            let ms = (Double(delta.value) / Double(delta.timescale)) * 1000.0
-            print("🧪 PTS delta after audio stop (audio - video): \(String(format: "%.2f", ms)) ms")
-        }
-
-        // ✅ Keep recording state as .recording during this small window so final video frames can still append
-        print("⏳ Finalizing video for additional 0.2s...")
-        try? await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
-
-        // Now transition UI/state to processing
-        await MainActor.run {
-            recordingState = .processing
-        }
-
-        // Stop accepting NEW frames
+        // ✅ CRITICAL FIX: Stop accepting NEW frames immediately to prevent buffer buildup
         isWriting = false
-        print("✅ Stopped accepting new frames")
+        print("✅ Stopped accepting new frames immediately")
 
-        // ✅ CRITICAL: Wait for ALL pending frame append tasks to complete
+        // ✅ Keep recording state as .recording during flush window so pending frames can still append
+        print("⏳ Flushing pending frames for 0.5s...")
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+
+        // ✅ CRITICAL: Wait for ALL pending frame append tasks to complete BEFORE stopping audio
         print("⏳ Waiting for pending frame tasks to complete...")
         var pendingCount = pendingTasksLock.withLock { $0.count }
         var iterations = 0
 
-        while pendingCount > 0 && iterations < 100 { // Max 1 second wait (100 * 10ms)
+        while pendingCount > 0 && iterations < 200 { // Max 2 seconds wait (200 * 10ms)
             try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
             pendingCount = pendingTasksLock.withLock { $0.count }
             iterations += 1
 
-            if iterations % 10 == 0 { // Log every 100ms
+            if iterations % 20 == 0 { // Log every 200ms
                 print("   Still waiting... \(pendingCount) tasks pending (iteration \(iterations))")
             }
         }
@@ -1232,6 +1225,23 @@ class DualCameraManager: NSObject, ObservableObject {
             print("⚠️ Timeout waiting for tasks - \(pendingCount) tasks still pending")
         } else {
             print("✅ All frame append tasks completed (\(iterations) iterations)")
+        }
+
+        // ✅ Now stop audio to prevent PTS desync
+        print("⏳ Stopping audio to prevent desync...")
+        dropAudioDuringStop = true
+        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+
+        // Optional: log PTS difference for diagnostics
+        if let v = lastVideoPTS, let a = lastAudioPTS {
+            let delta = CMTimeSubtract(a, v)
+            let ms = (Double(delta.value) / Double(delta.timescale)) * 1000.0
+            print("🧪 Final PTS delta (audio - video): \(String(format: "%.2f", ms)) ms")
+        }
+
+        // Now transition UI/state to processing
+        await MainActor.run {
+            recordingState = .processing
         }
 
         // Finish writing
