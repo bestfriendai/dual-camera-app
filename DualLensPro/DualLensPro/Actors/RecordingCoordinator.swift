@@ -30,6 +30,8 @@ actor RecordingCoordinator {
     private var frontVideoInput: AVAssetWriterInput?
     private var backVideoInput: AVAssetWriterInput?
     private var combinedVideoInput: AVAssetWriterInput?
+    private var frontAudioInput: AVAssetWriterInput?
+    private var backAudioInput: AVAssetWriterInput?
     private var combinedAudioInput: AVAssetWriterInput?
 
     private var frontPixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
@@ -109,6 +111,13 @@ actor RecordingCoordinator {
             AVEncoderBitRateKey: 128000
         ]
 
+        // Create audio inputs for all three writers
+        frontAudioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+        frontAudioInput?.expectsMediaDataInRealTime = true
+
+        backAudioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+        backAudioInput?.expectsMediaDataInRealTime = true
+
         combinedAudioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
         combinedAudioInput?.expectsMediaDataInRealTime = true
 
@@ -121,20 +130,36 @@ actor RecordingCoordinator {
         ]
 
         // Add inputs to writers with pixel buffer adaptors
-        if let input = frontVideoInput, frontWriter?.canAdd(input) == true {
-            frontWriter?.add(input)
-            frontPixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
-                assetWriterInput: input,
-                sourcePixelBufferAttributes: pixelBufferAttributes
-            )
+        // Front writer: video + audio
+        if let videoInput = frontVideoInput,
+           let audioInput = frontAudioInput,
+           let writer = frontWriter {
+            if writer.canAdd(videoInput) {
+                writer.add(videoInput)
+                frontPixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
+                    assetWriterInput: videoInput,
+                    sourcePixelBufferAttributes: pixelBufferAttributes
+                )
+            }
+            if writer.canAdd(audioInput) {
+                writer.add(audioInput)
+            }
         }
 
-        if let input = backVideoInput, backWriter?.canAdd(input) == true {
-            backWriter?.add(input)
-            backPixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
-                assetWriterInput: input,
-                sourcePixelBufferAttributes: pixelBufferAttributes
-            )
+        // Back writer: video + audio
+        if let videoInput = backVideoInput,
+           let audioInput = backAudioInput,
+           let writer = backWriter {
+            if writer.canAdd(videoInput) {
+                writer.add(videoInput)
+                backPixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
+                    assetWriterInput: videoInput,
+                    sourcePixelBufferAttributes: pixelBufferAttributes
+                )
+            }
+            if writer.canAdd(audioInput) {
+                writer.add(audioInput)
+            }
         }
 
         if let videoInput = combinedVideoInput,
@@ -260,27 +285,40 @@ actor RecordingCoordinator {
             return
         }
 
-        guard let input = combinedAudioInput else {
-            print("⚠️ No audio input configured")
-            return
+        // Append audio to all three writers (front, back, and combined)
+        var successCount = 0
+
+        // Append to front audio input
+        if let input = frontAudioInput, input.isReadyForMoreMediaData {
+            if input.append(sampleBuffer) {
+                successCount += 1
+            }
         }
 
-        // ✅ Check if input is ready
-        guard input.isReadyForMoreMediaData else {
-            print("⚠️ Audio input not ready - dropping sample")
-            return
+        // Append to back audio input
+        if let input = backAudioInput, input.isReadyForMoreMediaData {
+            if input.append(sampleBuffer) {
+                successCount += 1
+            }
         }
 
-        if input.append(sampleBuffer) {
-            // Success - only log occasionally to avoid spam
+        // Append to combined audio input
+        if let input = combinedAudioInput, input.isReadyForMoreMediaData {
+            if input.append(sampleBuffer) {
+                successCount += 1
+            }
+        }
+
+        // Log progress occasionally
+        if successCount > 0 {
             if audioSampleCount % 100 == 0 {
                 let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-                print("🎤 Audio sample \(audioSampleCount) appended at \(time.seconds)s")
+                print("🎤 Audio sample \(audioSampleCount) appended to \(successCount) writer(s) at \(time.seconds)s")
             }
             audioSampleCount += 1
         } else {
             let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-            print("❌ Failed to append audio sample at \(time.seconds)s")
+            print("⚠️ Failed to append audio sample at \(time.seconds)s - no inputs ready")
         }
     }
 
@@ -293,9 +331,11 @@ actor RecordingCoordinator {
 
         isWriting = false
 
-        // Mark all inputs as finished
+        // Mark all inputs as finished (video + audio for all three writers)
         frontVideoInput?.markAsFinished()
+        frontAudioInput?.markAsFinished()
         backVideoInput?.markAsFinished()
+        backAudioInput?.markAsFinished()
         combinedVideoInput?.markAsFinished()
         combinedAudioInput?.markAsFinished()
 
@@ -355,7 +395,9 @@ actor RecordingCoordinator {
         backWriter = nil
         combinedWriter = nil
         frontVideoInput = nil
+        frontAudioInput = nil
         backVideoInput = nil
+        backAudioInput = nil
         combinedVideoInput = nil
         combinedAudioInput = nil
         frontPixelBufferAdaptor = nil

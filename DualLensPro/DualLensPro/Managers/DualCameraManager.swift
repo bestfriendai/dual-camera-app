@@ -97,6 +97,9 @@ class DualCameraManager: NSObject, ObservableObject {
     // RecordingCoordinator provides thread-safe access to all AVAssetWriter objects
     nonisolated(unsafe) private var recordingCoordinator: RecordingCoordinator?
 
+    // Track pending frame append tasks to ensure they complete before finishing
+    private let pendingTasksLock = OSAllocatedUnfairLock<Set<UUID>>(initialState: [])
+
     // Background task support
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 
@@ -110,6 +113,11 @@ class DualCameraManager: NSObject, ObservableObject {
     nonisolated(unsafe) private var isWriting = false
     nonisolated(unsafe) private var hasReceivedFirstVideoFrame = false
     nonisolated(unsafe) private var hasReceivedFirstAudioFrame = false
+    nonisolated(unsafe) private var isStopping = false
+    
+    nonisolated(unsafe) private var lastVideoPTS: CMTime?
+    nonisolated(unsafe) private var lastAudioPTS: CMTime?
+    nonisolated(unsafe) private var dropAudioDuringStop = false
 
     // MARK: - Dispatch Queues
     private let sessionQueue = DispatchQueue(label: "com.duallens.sessionQueue")
@@ -140,7 +148,7 @@ class DualCameraManager: NSObject, ObservableObject {
     // Flag to prevent zoom updates before camera is ready
     nonisolated(unsafe) private var isCameraSetupComplete = false
 
-    var frontZoomFactor: CGFloat = 0.5 { // Default to 0.5x for front camera
+    var frontZoomFactor: CGFloat = 1.0 { // Default to 1.0x for front camera (full ultra-wide FOV)
         didSet {
             // Only update zoom if camera setup is complete to prevent crashes during init
             guard isCameraSetupComplete else { return }
@@ -224,9 +232,9 @@ class DualCameraManager: NSObject, ObservableObject {
     @objc nonisolated private func sessionRuntimeError(notification: Notification) {
         let error = notification.userInfo?[AVCaptureSessionErrorKey] as? AVError
         let description = error?.localizedDescription ?? "unknown"
-        print("❌ Session runtime error: \(description)")
+        print("⚠️ Session runtime error: \(description)")
 
-        // If media services were reset, recreate the session
+        // Only handle critical errors that require session recreation
         if let error = error, error.code == .mediaServicesWereReset {
             Task { @MainActor in
                 do {
@@ -242,9 +250,8 @@ class DualCameraManager: NSObject, ObservableObject {
                 }
             }
         } else {
-            Task { @MainActor in
-                self.errorMessage = "Camera error: \(description)"
-            }
+            // Log non-critical errors but don't show to user or stop session
+            print("⚠️ Non-critical session error (continuing): \(description)")
         }
     }
 
@@ -288,9 +295,24 @@ class DualCameraManager: NSObject, ObservableObject {
 
     nonisolated private func configureAudioSession() throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .videoRecording, options: [.defaultToSpeaker, .allowBluetooth])
+
+        // Deactivate first to clear any previous configuration
+        try? session.setActive(false, options: .notifyOthersOnDeactivation)
+
+        // Configure for video recording with mixed audio
+        try session.setCategory(
+            .playAndRecord,
+            mode: .videoRecording,
+            options: [.defaultToSpeaker, .allowBluetooth, .mixWithOthers]
+        )
+
+        // Set preferred sample rate and IO buffer duration for better quality
+        try? session.setPreferredSampleRate(48000.0)
+        try? session.setPreferredIOBufferDuration(0.005)
+
+        // Activate the session
         try session.setActive(true, options: [])
-        print("🔊 AVAudioSession configured: playAndRecord/videoRecording")
+        print("🔊 AVAudioSession configured: playAndRecord/videoRecording, 48kHz")
     }
 
     deinit {
@@ -388,14 +410,7 @@ class DualCameraManager: NSObject, ObservableObject {
 
         // Mark camera setup as complete - now safe to update zoom and other camera properties
         isCameraSetupComplete = true
-        print("✅ Camera setup complete - zoom updates now enabled")
-
-        // Apply initial zoom values now that setup is complete
-        if useMultiCam {
-            updateZoom(for: .front, factor: frontZoomFactor)
-        }
-        updateZoom(for: .back, factor: backZoomFactor)
-        print("✅ Initial zoom values applied: \(useMultiCam ? "front=\(frontZoomFactor)x, " : "")back=\(backZoomFactor)x")
+        print("✅ Camera setup complete - zoom updates now enabled (will apply after session starts)")
     }
 
     private func setupCamera(position: AVCaptureDevice.Position) async throws {
@@ -407,6 +422,12 @@ class DualCameraManager: NSObject, ObservableObject {
         // Configure camera device for optimal recording
         try camera.lockForConfiguration()
         defer { camera.unlockForConfiguration() }
+
+        // For front camera, set to minimum zoom for widest field of view
+        if position == .front {
+            camera.videoZoomFactor = camera.minAvailableVideoZoomFactor
+            print("📸 Front camera set to \(camera.minAvailableVideoZoomFactor)x (min zoom for widest FOV)")
+        }
 
         // Enable HDR video if supported
         if camera.activeFormat.isVideoHDRSupported {
@@ -468,6 +489,7 @@ class DualCameraManager: NSObject, ObservableObject {
             // Don't check canAddOutput for multi-cam
             multiCamSession.addOutputWithNoConnections(videoOutput)
             print("✅ Added video output with no connections for \(position == .front ? "front" : "back") camera")
+            print("📸 Using device type: \(camera.deviceType.rawValue) for video output")
 
             // Manually create connection between input and output
             guard let videoPort = input.ports(for: .video, sourceDeviceType: camera.deviceType, sourceDevicePosition: position).first else {
@@ -648,16 +670,21 @@ class DualCameraManager: NSObject, ObservableObject {
             guard let self = self else { return }
             if !self.activeSession.isRunning {
                 self.activeSession.startRunning()
+
                 Task { @MainActor in
                     self.isSessionRunning = self.activeSession.isRunning
                     print("✅ Session started (\(self.useMultiCam ? "multi-cam" : "single-cam") mode)")
+                }
 
-                    // Apply zooms once session is running to avoid early failures
-                    if self.isCameraSetupComplete {
+                // Apply zooms after a delay to let session fully start
+                if self.isCameraSetupComplete {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                        guard let self = self else { return }
+                        self.updateZoom(for: .front, factor: self.frontZoomFactor)
                         if self.useMultiCam {
-                            self.updateZoom(for: .front, factor: self.frontZoomFactor)
+                            self.updateZoom(for: .back, factor: self.backZoomFactor)
                         }
-                        self.updateZoom(for: .back, factor: self.backZoomFactor)
+                        print("✅ Initial zoom applied after session start")
                     }
                 }
             }
@@ -678,44 +705,49 @@ class DualCameraManager: NSObject, ObservableObject {
     }
 
     // MARK: - Zoom Control
+    // Helper to apply zoom when already on sessionQueue
+    nonisolated private func applyZoomDirectly(for position: CameraPosition, factor: CGFloat) {
+        let device: AVCaptureDevice?
+        switch position {
+        case .front:
+            device = self.frontCameraInput?.device
+        case .back:
+            device = self.backCameraInput?.device
+        }
+
+        guard let device = device else {
+            print("⚠️ Device not found for position: \(position)")
+            return
+        }
+
+        guard device.isConnected else {
+            print("⚠️ Device not connected")
+            return
+        }
+
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+
+            let clampedFactor = min(max(factor, device.minAvailableVideoZoomFactor), device.maxAvailableVideoZoomFactor)
+            device.videoZoomFactor = clampedFactor
+            print("✅ Applied zoom \(clampedFactor)x to \(position == .front ? "front" : "back") camera")
+        } catch {
+            print("❌ Error setting zoom: \(error.localizedDescription)")
+        }
+    }
+
     private func updateZoom(for position: CameraPosition, factor: CGFloat) {
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
 
             // Check if session is running
-            guard self.isSessionRunning else {
+            guard self.activeSession.isRunning else {
                 print("⚠️ Cannot update zoom - session not running")
                 return
             }
 
-            let device: AVCaptureDevice?
-            switch position {
-            case .front:
-                device = self.frontCameraInput?.device
-            case .back:
-                device = self.backCameraInput?.device
-            }
-
-            guard let device = device else {
-                print("⚠️ Device not found for position: \(position)")
-                return
-            }
-
-            // Check device is connected (important for external cameras on iPad)
-            guard device.isConnected else {
-                print("⚠️ Device not connected")
-                return
-            }
-
-            do {
-                try device.lockForConfiguration()
-                defer { device.unlockForConfiguration() }
-
-                let clampedFactor = min(max(factor, device.minAvailableVideoZoomFactor), device.maxAvailableVideoZoomFactor)
-                device.videoZoomFactor = clampedFactor
-            } catch {
-                print("❌ Error setting zoom: \(error.localizedDescription)")
-            }
+            self.applyZoomDirectly(for: position, factor: factor)
         }
     }
 
@@ -1077,6 +1109,9 @@ class DualCameraManager: NSObject, ObservableObject {
             return
         }
 
+        // Clear any pending tasks from previous recording
+        pendingTasksLock.withLock { $0.removeAll() }
+
         // Check available disk space before starting
         guard hasEnoughDiskSpace() else {
             await MainActor.run {
@@ -1111,6 +1146,10 @@ class DualCameraManager: NSObject, ObservableObject {
         recordingStartTime = nil
         hasReceivedFirstVideoFrame = false
         hasReceivedFirstAudioFrame = false
+        
+        lastVideoPTS = nil
+        lastAudioPTS = nil
+        dropAudioDuringStop = false
 
         // Setup asset writers (async with coordinator)
         do {
@@ -1135,15 +1174,65 @@ class DualCameraManager: NSObject, ObservableObject {
             print("⚠️ stopRecording called but not recording, state: \(recordingState)")
             return
         }
+        
+        if isStopping {
+            print("⚠️ stopRecording already in progress")
+            return
+        }
+        
+        // Mark that we're stopping to avoid re-entry
+        isStopping = true
+        
+        // Ensure we reset this flag on any exit
+        defer { isStopping = false }
 
         print("🛑 Stopping recording...")
 
+        // ✅ First, stop accepting new audio so video can catch up to the last audio PTS
+        print("⏳ Stopping audio first, allowing video to catch up (0.3s)...")
+        dropAudioDuringStop = true
+        try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
+
+        // Optional: log PTS difference for diagnostics
+        if let v = lastVideoPTS, let a = lastAudioPTS {
+            let delta = CMTimeSubtract(a, v)
+            let ms = (Double(delta.value) / Double(delta.timescale)) * 1000.0
+            print("🧪 PTS delta after audio stop (audio - video): \(String(format: "%.2f", ms)) ms")
+        }
+
+        // ✅ Keep recording state as .recording during this small window so final video frames can still append
+        print("⏳ Finalizing video for additional 0.2s...")
+        try? await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
+
+        // Now transition UI/state to processing
         await MainActor.run {
             recordingState = .processing
         }
 
-        // Stop writing new samples
+        // Stop accepting NEW frames
         isWriting = false
+        print("✅ Stopped accepting new frames")
+
+        // ✅ CRITICAL: Wait for ALL pending frame append tasks to complete
+        print("⏳ Waiting for pending frame tasks to complete...")
+        var pendingCount = pendingTasksLock.withLock { $0.count }
+        var iterations = 0
+
+        while pendingCount > 0 && iterations < 100 { // Max 1 second wait (100 * 10ms)
+            try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
+            pendingCount = pendingTasksLock.withLock { $0.count }
+            iterations += 1
+
+            if iterations % 10 == 0 { // Log every 100ms
+                print("   Still waiting... \(pendingCount) tasks pending (iteration \(iterations))")
+            }
+        }
+
+        if pendingCount > 0 {
+            print("⚠️ Timeout waiting for tasks - \(pendingCount) tasks still pending")
+        } else {
+            print("✅ All frame append tasks completed (\(iterations) iterations)")
+        }
 
         // Finish writing
         do {
@@ -1173,6 +1262,9 @@ class DualCameraManager: NSObject, ObservableObject {
             }
             throw error
         }
+
+        // Reset audio drop flag for next recording
+        dropAudioDuringStop = false
 
         await MainActor.run {
             recordingState = .idle
@@ -1767,6 +1859,8 @@ class DualCameraManager: NSObject, ObservableObject {
             return
         }
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        
+        lastVideoPTS = pts
 
         // Use the coordinator to append pixel buffers (thread-safe via actor)
         guard let coordinator = recordingCoordinator else { return }
@@ -1774,7 +1868,16 @@ class DualCameraManager: NSObject, ObservableObject {
         // Box the pixel buffer for safe transfer across actor boundary
         let box = PixelBufferBox(pixelBuffer, time: pts)
 
-        Task { [box, isFront, isBack] in
+        // ✅ FIX: Track each append task so we can wait for all to complete
+        let taskID = UUID()
+        pendingTasksLock.withLock { $0.insert(taskID) }
+
+        Task { [box, isFront, isBack, coordinator, taskID, weak self] in
+            defer {
+                // Remove from pending tasks when done
+                self?.pendingTasksLock.withLock { $0.remove(taskID) }
+            }
+
             do {
                 if isFront {
                     try await coordinator.appendFrontPixelBuffer(box.buffer, time: box.time)
@@ -1838,12 +1941,21 @@ extension DualCameraManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCap
             hasReceivedFirstAudioFrame = true
             print("🎤 First audio frame received")
         }
+        
+        // If we're in the stop sequence and dropping audio, ignore further audio samples
+        if dropAudioDuringStop {
+            return
+        }
 
         // Wait for writing to start (video frame triggers this)
         guard isWriting, recordingStartTime != nil else {
             // print("⏸️ Audio sample received but not writing yet")
             return
         }
+        
+        // Track last audio timestamp
+        let audioPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        lastAudioPTS = audioPTS
 
         // Use the coordinator to append audio samples (thread-safe via actor)
         guard let coordinator = recordingCoordinator else { return }
