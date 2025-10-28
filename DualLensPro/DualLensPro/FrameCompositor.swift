@@ -202,18 +202,18 @@ final class FrameCompositor: Sendable {
         let frontImage = CIImage(cvPixelBuffer: front)
         let backImage = CIImage(cvPixelBuffer: back)
 
-        // ✅ Apply orientation transforms before scaling
-        let frontOriented = orientImage(frontImage, isFrontCamera: true)
-        let backOriented = orientImage(backImage, isFrontCamera: false)
+        // ✅ CRITICAL FIX: Buffers are ALREADY rotated and mirrored by RecordingCoordinator
+        // DO NOT apply orientation transforms here - just use them directly
+        // Input buffers are already portrait (1080x1920), output is portrait stacked (1080x3840)
 
         // Calculate dimensions for stacking
         let outputWidth = CGFloat(width)
         let outputHeight = CGFloat(height)
         let halfHeight = outputHeight / 2
 
-        // Scale oriented images to fit half-height
-        let frontScaled = scaleToFit(image: frontOriented, width: outputWidth, height: halfHeight)
-        let backScaled = scaleToFit(image: backOriented, width: outputWidth, height: halfHeight)
+        // Scale images to fit half-height (no orientation needed - already correct)
+        let frontScaled = scaleToFit(image: frontImage, width: outputWidth, height: halfHeight)
+        let backScaled = scaleToFit(image: backImage, width: outputWidth, height: halfHeight)
         
         // Position front on top, back on bottom
         let frontPositioned = frontScaled.transformed(by: CGAffineTransform(translationX: 0, y: halfHeight))

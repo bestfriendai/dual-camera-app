@@ -127,6 +127,17 @@ class CameraViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // ✅ CRITICAL FIX: Observe recordingDuration changes to update timer UI
+        cameraManager.$recordingDuration
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] duration in
+                // Trigger UI update when duration changes
+                Task { @MainActor in
+                    self?.objectWillChange.send()
+                }
+            }
+            .store(in: &cancellables)
+
         // ✅ CRITICAL FIX: Manually sync mode since didSet doesn't fire in init
         // This ensures cameraManager and configuration are properly initialized
         configuration.setCaptureMode(.video)

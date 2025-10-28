@@ -1865,27 +1865,46 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         let bitRate = recordingQuality.bitRate
         let frameRate = captureMode.frameRate  // ✅ Get dynamic frame rate from capture mode
 
-        // ✅ FORCE PORTRAIT MODE: Always record videos in portrait orientation
-        // Camera buffers are ALWAYS in landscape (1920x1080)
-        // We'll rotate the pixel buffers to portrait (1080x1920) for all recordings
+        // ✅ Ensure saved files are upright in portrait by applying writer input transforms
+        // The capture connections carry rotation metadata for preview, but the asset writer
+        // needs an explicit transform so the encoded tracks play back correctly.
         let orientation = UIDevice.current.orientation
-        let isPortrait = true  // ✅ ALWAYS PORTRAIT - User requirement
 
-        print("📱 FORCED PORTRAIT MODE - All videos will be recorded in portrait orientation")
-
-        // ✅ CRITICAL FIX: Swap dimensions for portrait mode so pixel rotation works
-        // RecordingCoordinator rotates pixel buffers from landscape (1920x1080) to portrait (1080x1920)
+        // Use portrait dimensions by rotating base (landscape) dimensions
         let dimensions: (width: Int, height: Int)
         let combinedDimensions: (width: Int, height: Int)
 
-        // Always use portrait dimensions (1080x1920)
-        dimensions = (width: baseDimensions.height, height: baseDimensions.width)
-        combinedDimensions = (width: baseDimensions.height, height: baseDimensions.width)
-        print("📱 Portrait dimensions - All videos: \(dimensions.width)x\(dimensions.height) (will rotate pixels)")
+        // Portrait dimensions (swap width/height from the base landscape format)
+        // dimensions = (width: baseDimensions.height, height: baseDimensions.width)  // e.g., 1080x1920
+        // Combined video is stacked vertically, so double the height
+        // combinedDimensions = (width: baseDimensions.height, height: baseDimensions.width * 2)  // e.g., 1080x3840
 
-        // ✅ No transform needed since we're rotating pixels
-        let transform = CGAffineTransform.identity
-        print("🔄 Using identity transform (rotating pixels instead)")
+        // Changed per instructions: use landscape encoding dimensions instead of portrait
+        dimensions = (width: baseDimensions.width, height: baseDimensions.height)
+        combinedDimensions = (width: baseDimensions.width, height: baseDimensions.height * 2)
+
+        print("🖼️ Encoding dimensions (landscape buffers): \(dimensions.width)x\(dimensions.height)")
+        print("🖼️ Combined dimensions (landscape buffers): \(combinedDimensions.width)x\(combinedDimensions.height)")
+
+        // Compute the correct rotation transform for the writer inputs based on device orientation
+        // This rotates the encoded track so that playback is upright without relying on metadata.
+        let rotationTransform = currentVideoTransform()
+
+        // Back camera: apply rotation only
+        let backTransform = rotationTransform
+
+        // Front camera: apply rotation + horizontal mirror to match selfie-style preview
+        // Mirror is applied in the portrait coordinate space; translate by portrait width after scaling X by -1
+        // let mirrorInPortrait = CGAffineTransform(scaleX: -1, y: 1)
+        //     .translatedBy(x: CGFloat(dimensions.width), y: 0)
+        // let frontTransform = rotationTransform.concatenating(mirrorInPortrait)
+
+        // Changed per instructions: use mirror transform in landscape coordinate space and rename variable
+        let mirrorInLandscape = CGAffineTransform(scaleX: -1, y: 1)
+            .translatedBy(x: CGFloat(dimensions.width), y: 0)
+        let frontTransform = rotationTransform.concatenating(mirrorInLandscape)
+
+        print("🔄 Writer transforms prepared (rotation applied, front mirrored)")
 
         print("🎬 Setting up writers with \(frameRate)fps, dimensions: \(dimensions.width)x\(dimensions.height)")
 
@@ -1893,7 +1912,7 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         let coordinator = RecordingCoordinator()
         self.recordingCoordinator = coordinator
 
-        // Configure the coordinator (thread-safe setup) with correct dimensions and transform
+        // Configure the coordinator (thread-safe setup) with correct dimensions and transforms
         try await coordinator.configure(
             frontURL: frontURL,
             backURL: backURL,
@@ -1901,9 +1920,10 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             dimensions: dimensions,
             combinedDimensions: combinedDimensions,
             bitRate: bitRate,
-            frameRate: frameRate,  // ✅ Pass dynamic frame rate
-            videoTransform: transform,  // ✅ Proper orientation transform
-            deviceOrientation: orientation  // ✅ Pass device orientation to compositor
+            frameRate: frameRate,
+            frontTransform: frontTransform,  // ✅ Rotation + mirroring for front
+            backTransform: backTransform,    // ✅ Rotation only for back
+            deviceOrientation: orientation
         )
 
         print("✅ RecordingCoordinator configured and ready")
@@ -2026,15 +2046,26 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
     // ✅ FIX Issue #11: Save directly from temp directory - NO intermediate copy needed
     private func saveVideoToPhotos(url: URL, title: String) async throws {
         print("📸 Saving \(title) video to Photos: \(url.lastPathComponent)")
+        print("📸 Full path: \(url.path)")
 
         // Verify file exists
         guard FileManager.default.fileExists(atPath: url.path) else {
             print("❌ Video file doesn't exist at: \(url.path)")
+            print("❌ Listing temp directory contents:")
+            if let tempContents = try? FileManager.default.contentsOfDirectory(atPath: FileManager.default.temporaryDirectory.path) {
+                for file in tempContents {
+                    print("   - \(file)")
+                }
+            }
             throw CameraError.failedToSaveToPhotos
         }
 
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
         print("📸 File size: \(fileSize) bytes (\(String(format: "%.2f", Double(fileSize) / 1_048_576)) MB)")
+
+        if fileSize == 0 {
+            print("❌ WARNING: File size is 0 bytes! Video may not have been written correctly.")
+        }
 
         // Save directly from temp directory - PHPhotoLibrary CAN access temp files
         return try await Task.detached {
@@ -2097,14 +2128,25 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
     }
 
     private func startRecordingTimer() {
-        Task {
-            // Use thread-safe lock to check recording state instead of accessing MainActor property
-            while recordingStateLock.withLock({ $0 == .recording }) {
+        // ✅ Create timer task on MainActor and store reference
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            print("⏱️ Timer task started on MainActor")
+
+            while self.recordingState == .recording {
                 try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
-                await MainActor.run {
-                    recordingDuration += 0.1
+
+                // Double-check state after sleep
+                if self.recordingState == .recording {
+                    self.recordingDuration += 0.1
+                    // Print every second for debugging
+                    if Int(self.recordingDuration * 10) % 10 == 0 {
+                        print("⏱️ Recording duration: \(String(format: "%.1f", self.recordingDuration))s")
+                    }
                 }
             }
+
+            print("⏱️ Timer task ended")
         }
     }
 

@@ -183,6 +183,7 @@ struct DualCameraView: View {
                                 RecordingIndicator(duration: viewModel.recordingDuration)
                                     .padding(.top, max(geometry.safeAreaInsets.top + 70, 80))
                                     .padding(.trailing, 20)
+                                    .zIndex(999)  // ✅ Ensure it's on top
                             }
                         }
 
@@ -273,6 +274,7 @@ struct DualCameraView: View {
                             RecordingIndicator(duration: viewModel.recordingDuration)
                                 .padding(.top, max(geometry.safeAreaInsets.top + 50, 60))
                                 .padding(.trailing, 16)
+                                .zIndex(999)  // ✅ Ensure it's on top
                         }
                     }
                 }
