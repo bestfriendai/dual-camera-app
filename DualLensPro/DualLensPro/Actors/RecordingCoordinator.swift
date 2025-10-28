@@ -373,14 +373,22 @@ actor RecordingCoordinator {
         // ✅ Rotate pixel buffer if in portrait mode
         let bufferToWrite: CVPixelBuffer
         if needsRotation {
+            let originalWidth = CVPixelBufferGetWidth(pixelBuffer)
+            let originalHeight = CVPixelBufferGetHeight(pixelBuffer)
+            print("🔄 FRONT: Rotating buffer from \(originalWidth)x\(originalHeight) to \(targetWidth)x\(targetHeight)")
+
             // ✅ FIX: Use configured dimensions and mirror front camera
             if let rotated = rotateAndMirrorPixelBuffer(pixelBuffer, to: (width: targetWidth, height: targetHeight), mirror: true) {
+                let rotatedWidth = CVPixelBufferGetWidth(rotated)
+                let rotatedHeight = CVPixelBufferGetHeight(rotated)
+                print("✅ FRONT: Rotated successfully to \(rotatedWidth)x\(rotatedHeight)")
                 bufferToWrite = rotated
             } else {
-                print("⚠️ Failed to rotate front buffer - using original")
+                print("❌ FRONT: Failed to rotate buffer - using original (VIDEO WILL BE SIDEWAYS!)")
                 bufferToWrite = pixelBuffer
             }
         } else {
+            print("ℹ️ FRONT: No rotation needed (landscape mode)")
             bufferToWrite = pixelBuffer
         }
 
@@ -403,17 +411,26 @@ actor RecordingCoordinator {
            let input = backVideoInput,
            input.isReadyForMoreMediaData {
 
-            // ✅ Rotate pixel buffer if in portrait mode (no mirroring for back camera)
+            // ✅ BACK CAMERA: Rotate if needed (portrait mode) but DON'T mirror
+            // Camera buffers are 1920x1080, but writer expects 1080x1920 in portrait mode
             let bufferToWrite: CVPixelBuffer
             if needsRotation {
-                // ✅ FIX: Use configured dimensions, don't mirror back camera
+                let originalWidth = CVPixelBufferGetWidth(pixelBuffer)
+                let originalHeight = CVPixelBufferGetHeight(pixelBuffer)
+                print("🔄 BACK: Rotating buffer from \(originalWidth)x\(originalHeight) to \(targetWidth)x\(targetHeight) (NO MIRROR)")
+
+                // ✅ Rotate to match writer dimensions, but don't mirror back camera
                 if let rotated = rotateAndMirrorPixelBuffer(pixelBuffer, to: (width: targetWidth, height: targetHeight), mirror: false) {
+                    let rotatedWidth = CVPixelBufferGetWidth(rotated)
+                    let rotatedHeight = CVPixelBufferGetHeight(rotated)
+                    print("✅ BACK: Rotated successfully to \(rotatedWidth)x\(rotatedHeight)")
                     bufferToWrite = rotated
                 } else {
-                    print("⚠️ Failed to rotate back buffer - using original")
+                    print("❌ BACK: Failed to rotate - using original (will be squeezed!)")
                     bufferToWrite = pixelBuffer
                 }
             } else {
+                print("📹 BACK: No rotation needed (landscape mode)")
                 bufferToWrite = pixelBuffer
             }
 
