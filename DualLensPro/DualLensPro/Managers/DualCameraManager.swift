@@ -1776,15 +1776,32 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         let frameRate = captureMode.frameRate  // ✅ Get dynamic frame rate from capture mode
 
         // ✅ CRITICAL FIX: Camera buffers are ALWAYS in landscape (1920x1080)
-        // videoRotationAngle on AVCaptureConnection only sets metadata, doesn't rotate pixels
-        // We use the actual buffer dimensions and apply transform to rotate for playback
-        let dimensions = (width: baseDimensions.width, height: baseDimensions.height)
-        print("📱 Using buffer dimensions: \(dimensions.width)x\(dimensions.height)")
+        // For portrait videos, we need to swap dimensions so videos display correctly
+        // We'll rotate the pixel buffers before writing them
+        let orientation = UIDevice.current.orientation
+        let isPortrait = (orientation == .portrait || orientation == .portraitUpsideDown ||
+                         orientation == .unknown || orientation == .faceUp || orientation == .faceDown)
 
-        // ✅ FIX: Calculate proper transform for video orientation
-        // This rotates the landscape buffer to display correctly in portrait/landscape
-        let transform = currentVideoTransform()
-        print("🔄 Using transform: \(transform)")
+        // ✅ CRITICAL FIX: Swap dimensions for ALL videos in portrait mode
+        // This ensures videos display correctly without relying on transform metadata
+        let dimensions: (width: Int, height: Int)
+        let combinedDimensions: (width: Int, height: Int)
+
+        if isPortrait {
+            // Portrait: swap dimensions for all videos (1080x1920)
+            dimensions = (width: baseDimensions.height, height: baseDimensions.width)
+            combinedDimensions = (width: baseDimensions.height, height: baseDimensions.width)
+            print("📱 Portrait mode - All videos: \(dimensions.width)x\(dimensions.height)")
+        } else {
+            // Landscape: keep original dimensions (1920x1080)
+            dimensions = (width: baseDimensions.width, height: baseDimensions.height)
+            combinedDimensions = (width: baseDimensions.width, height: baseDimensions.height)
+            print("📱 Landscape mode - All videos: \(dimensions.width)x\(dimensions.height)")
+        }
+
+        // ✅ No transform needed - we're rotating pixels directly
+        let transform = CGAffineTransform.identity
+        print("🔄 Using identity transform (pixels will be rotated)")
 
         print("🎬 Setting up writers with \(frameRate)fps, dimensions: \(dimensions.width)x\(dimensions.height)")
 
@@ -1798,6 +1815,7 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             backURL: backURL,
             combinedURL: combinedURL,
             dimensions: dimensions,
+            combinedDimensions: combinedDimensions,
             bitRate: bitRate,
             frameRate: frameRate,  // ✅ Pass dynamic frame rate
             videoTransform: transform  // ✅ Proper orientation transform
@@ -2173,28 +2191,13 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
     // MARK: - Video Sample Buffer Handler
     // Called on writerQueue - thread-safe access to writer state
     nonisolated private func handleVideoSampleBuffer(_ sampleBuffer: CMSampleBuffer, isFront: Bool, isBack: Bool) {
-        // Start writing on first video frame
-        if !isWriting && !hasReceivedFirstVideoFrame {
+        // Mark that we've received video
+        if !hasReceivedFirstVideoFrame {
             hasReceivedFirstVideoFrame = true
-            print("🎬 Starting session on first video frame")
-
-            let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-            recordingStartTime = timestamp
-
-            // Start the coordinator's writers
-            guard let coordinator = recordingCoordinator else { return }
-            Task {
-                do {
-                    try await coordinator.startWriting(at: timestamp)
-                    isWriting = true
-                    print("✅ Writers started and ready to accept samples")
-                } catch {
-                    print("❌ Failed to start writing: \(error)")
-                }
-            }
-            return // Skip this frame since we're starting
+            print("🎬 First video frame received")
         }
 
+        // Wait for writing to start (audio frame triggers this now)
         guard isWriting, recordingStartTime != nil else {
             return
         }
@@ -2297,18 +2300,35 @@ extension DualCameraManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCap
 
     // Called on writerQueue - thread-safe access to writer state
     nonisolated private func handleAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
-        // Mark that we've received audio
-        if !hasReceivedFirstAudioFrame {
+        // ✅ CRITICAL FIX: Start writing on first AUDIO frame (not video)
+        // Audio arrives before video, so starting on audio ensures we capture all audio
+        if !isWriting && !hasReceivedFirstAudioFrame {
             hasReceivedFirstAudioFrame = true
-            print("🎤 First audio frame received")
+            print("🎤 First audio frame received - starting session")
+
+            let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            recordingStartTime = timestamp
+
+            // Start the coordinator's writers
+            guard let coordinator = recordingCoordinator else { return }
+            Task {
+                do {
+                    try await coordinator.startWriting(at: timestamp)
+                    isWriting = true
+                    print("✅ Writers started and ready to accept samples")
+                } catch {
+                    print("❌ Failed to start writing: \(error)")
+                }
+            }
+            return // Skip this sample since we're starting
         }
-        
+
         // If we're in the stop sequence and dropping audio, ignore further audio samples
         if dropAudioDuringStop {
             return
         }
 
-        // Wait for writing to start (video frame triggers this)
+        // Wait for writing to start
         guard isWriting, recordingStartTime != nil else {
             // print("⏸️ Audio sample received but not writing yet")
             return

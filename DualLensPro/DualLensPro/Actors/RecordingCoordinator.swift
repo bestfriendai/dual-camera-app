@@ -9,6 +9,8 @@
 import AVFoundation
 import CoreMedia
 import Foundation
+import CoreImage
+import CoreVideo
 
 /// Thread-safe recording coordinator using Swift 6 actor isolation
 /// Eliminates all data races in video recording pipeline
@@ -65,18 +67,33 @@ actor RecordingCoordinator {
     private var lastBackAudioPTS: CMTime?
     private var lastCombinedAudioPTS: CMTime?
 
+    // MARK: - Orientation tracking
+    private var needsRotation = false
+    private var ciContext: CIContext?
+
     // MARK: - Configuration
     func configure(
         frontURL: URL,
         backURL: URL,
         combinedURL: URL,
         dimensions: (width: Int, height: Int),
+        combinedDimensions: (width: Int, height: Int),
         bitRate: Int,
         frameRate: Int,
         videoTransform: CGAffineTransform
     ) throws {
         print("🎬 RecordingCoordinator: Configuring...")
         print("🎬 Frame rate: \(frameRate)fps, Transform: \(videoTransform)")
+        print("🎬 Individual dimensions: \(dimensions.width)x\(dimensions.height)")
+        print("🎬 Combined dimensions: \(combinedDimensions.width)x\(combinedDimensions.height)")
+
+        // ✅ Detect if we need to rotate pixel buffers (portrait mode)
+        // If dimensions are 1080x1920 (portrait), we need to rotate 1920x1080 buffers
+        needsRotation = (dimensions.width < dimensions.height)
+        if needsRotation {
+            ciContext = CIContext(options: [.useSoftwareRenderer: false])
+            print("🔄 Portrait mode detected - will rotate pixel buffers")
+        }
 
         self.frontURL = frontURL
         self.backURL = backURL
@@ -87,7 +104,7 @@ actor RecordingCoordinator {
         backWriter = try AVAssetWriter(outputURL: backURL, fileType: .mov)
         combinedWriter = try AVAssetWriter(outputURL: combinedURL, fileType: .mov)
 
-        // ✅ Use HEVC for better compression and hardware acceleration
+        // ✅ Video settings for individual cameras (front/back)
         let videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.hevc,
             AVVideoWidthKey: dimensions.width,
@@ -95,6 +112,18 @@ actor RecordingCoordinator {
             AVVideoCompressionPropertiesKey: [
                 AVVideoAverageBitRateKey: bitRate,
                 AVVideoExpectedSourceFrameRateKey: frameRate,  // ✅ Dynamic frame rate
+                AVVideoMaxKeyFrameIntervalKey: frameRate
+            ]
+        ]
+
+        // ✅ CRITICAL FIX: Separate video settings for combined output with portrait dimensions
+        let combinedVideoSettings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.hevc,
+            AVVideoWidthKey: combinedDimensions.width,
+            AVVideoHeightKey: combinedDimensions.height,
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: bitRate,
+                AVVideoExpectedSourceFrameRateKey: frameRate,
                 AVVideoMaxKeyFrameIntervalKey: frameRate
             ]
         ]
@@ -108,9 +137,11 @@ actor RecordingCoordinator {
         backVideoInput?.expectsMediaDataInRealTime = true
         backVideoInput?.transform = videoTransform  // ✅ Apply orientation transform
 
-        combinedVideoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        // ✅ CRITICAL FIX: Combined video uses separate settings with portrait dimensions
+        combinedVideoInput = AVAssetWriterInput(mediaType: .video, outputSettings: combinedVideoSettings)
         combinedVideoInput?.expectsMediaDataInRealTime = true
-        combinedVideoInput?.transform = videoTransform  // ✅ Apply orientation transform
+        // ✅ No transform needed for combined - compositor creates properly oriented output
+        combinedVideoInput?.transform = .identity
 
         // ✅ Audio settings optimized for quality
         let audioSettings: [String: Any] = [
@@ -135,6 +166,14 @@ actor RecordingCoordinator {
             kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
             kCVPixelBufferWidthKey as String: dimensions.width,
             kCVPixelBufferHeightKey as String: dimensions.height,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:]
+        ]
+
+        // ✅ CRITICAL FIX: Separate pixel buffer attributes for combined output with portrait dimensions
+        let combinedPixelBufferAttributes: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
+            kCVPixelBufferWidthKey as String: combinedDimensions.width,
+            kCVPixelBufferHeightKey as String: combinedDimensions.height,
             kCVPixelBufferIOSurfacePropertiesKey as String: [:]
         ]
 
@@ -171,6 +210,7 @@ actor RecordingCoordinator {
             }
         }
 
+        // ✅ CRITICAL FIX: Combined writer uses portrait dimensions for vertical stacking
         if let videoInput = combinedVideoInput,
            let audioInput = combinedAudioInput,
            let writer = combinedWriter {
@@ -178,7 +218,7 @@ actor RecordingCoordinator {
                 writer.add(videoInput)
                 combinedPixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
                     assetWriterInput: videoInput,
-                    sourcePixelBufferAttributes: pixelBufferAttributes
+                    sourcePixelBufferAttributes: combinedPixelBufferAttributes
                 )
             }
             if writer.canAdd(audioInput) {
@@ -186,8 +226,8 @@ actor RecordingCoordinator {
             }
         }
 
-        // Initialize frame compositor for stacked dual-camera output (Issue #4.5 Fix: Actor-isolated)
-        compositor = FrameCompositor(width: dimensions.width, height: dimensions.height)
+        // ✅ CRITICAL FIX: Initialize frame compositor with portrait dimensions for vertical stacking
+        compositor = FrameCompositor(width: combinedDimensions.width, height: combinedDimensions.height)
         print("✅ FrameCompositor initialized for combined output (actor-isolated)")
 
         print("✅ RecordingCoordinator: Configuration complete")
@@ -239,6 +279,45 @@ actor RecordingCoordinator {
         print("✅ RecordingCoordinator: All writers started successfully")
     }
 
+    // MARK: - Pixel Buffer Rotation
+    /// Rotates a pixel buffer from landscape (1920x1080) to portrait (1080x1920)
+    private func rotatePixelBuffer(_ pixelBuffer: CVPixelBuffer, to dimensions: (width: Int, height: Int)) -> CVPixelBuffer? {
+        guard let context = ciContext else { return nil }
+
+        // Create CIImage from pixel buffer
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+
+        // ✅ Use CIImage.oriented() for proper rotation
+        // .right = 90° clockwise rotation (landscape → portrait)
+        let rotatedImage = ciImage.oriented(.right)
+
+        // Create output pixel buffer with portrait dimensions
+        var outputBuffer: CVPixelBuffer?
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            dimensions.width,
+            dimensions.height,
+            kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+            [
+                kCVPixelBufferIOSurfacePropertiesKey: [:],
+                kCVPixelBufferMetalCompatibilityKey: true
+            ] as CFDictionary,
+            &outputBuffer
+        )
+
+        guard status == kCVReturnSuccess, let output = outputBuffer else {
+            print("❌ Failed to create rotated pixel buffer")
+            return nil
+        }
+
+        // Render rotated image to output buffer
+        // The extent of the rotated image should match our output dimensions
+        let outputRect = CGRect(x: 0, y: 0, width: dimensions.width, height: dimensions.height)
+        context.render(rotatedImage, to: output, bounds: outputRect, colorSpace: CGColorSpaceCreateDeviceRGB())
+
+        return output
+    }
+
     func appendFrontPixelBuffer(_ pixelBuffer: CVPixelBuffer, time: CMTime) throws {
         guard isWriting else { return }
 
@@ -254,14 +333,27 @@ actor RecordingCoordinator {
             return
         }
 
-        let ok = adaptor.append(pixelBuffer, withPresentationTime: time)
+        // ✅ Rotate pixel buffer if in portrait mode
+        let bufferToWrite: CVPixelBuffer
+        if needsRotation {
+            if let rotated = rotatePixelBuffer(pixelBuffer, to: (width: CVPixelBufferGetHeight(pixelBuffer), height: CVPixelBufferGetWidth(pixelBuffer))) {
+                bufferToWrite = rotated
+            } else {
+                print("⚠️ Failed to rotate front buffer - using original")
+                bufferToWrite = pixelBuffer
+            }
+        } else {
+            bufferToWrite = pixelBuffer
+        }
+
+        let ok = adaptor.append(bufferToWrite, withPresentationTime: time)
         if ok {
             lastFrontVideoPTS = time
         } else {
             print("⚠️ Failed to append front pixel buffer at \(time.seconds)s")
         }
 
-        // Cache front buffer for compositing
+        // Cache front buffer for compositing (use original, not rotated)
         lastFrontBuffer = (buffer: pixelBuffer, time: time)
     }
 
@@ -272,7 +364,21 @@ actor RecordingCoordinator {
         if let adaptor = backPixelBufferAdaptor,
            let input = backVideoInput,
            input.isReadyForMoreMediaData {
-            let ok = adaptor.append(pixelBuffer, withPresentationTime: time)
+
+            // ✅ Rotate pixel buffer if in portrait mode
+            let bufferToWrite: CVPixelBuffer
+            if needsRotation {
+                if let rotated = rotatePixelBuffer(pixelBuffer, to: (width: CVPixelBufferGetHeight(pixelBuffer), height: CVPixelBufferGetWidth(pixelBuffer))) {
+                    bufferToWrite = rotated
+                } else {
+                    print("⚠️ Failed to rotate back buffer - using original")
+                    bufferToWrite = pixelBuffer
+                }
+            } else {
+                bufferToWrite = pixelBuffer
+            }
+
+            let ok = adaptor.append(bufferToWrite, withPresentationTime: time)
             if ok {
                 lastBackVideoPTS = time
             } else {
@@ -401,13 +507,12 @@ actor RecordingCoordinator {
         print("🎨 GPU pipeline flushed, all renders complete")
 
         // ✅ CRITICAL FIX: Use the EARLIER timestamp (MIN) to prevent frozen frames
-        // The frozen frame issue happens when we try to include frames that haven't been fully written
-        // We must end the session BEFORE the last incomplete frame, not after
-        // This ensures all frames in the video are complete and not frozen
+        // Now that we start session on first AUDIO frame, audio and video are synchronized
+        // Using MIN ensures we don't try to include frames beyond the last video frame
         func endTime(_ v: CMTime?, _ a: CMTime?) -> CMTime? {
             switch (v, a) {
             case let (v?, a?):
-                // Use the EARLIER timestamp to ensure all frames are complete
+                // Use the EARLIER timestamp to prevent frozen frames
                 return CMTimeCompare(v, a) <= 0 ? v : a
             case let (v?, nil):
                 return v
