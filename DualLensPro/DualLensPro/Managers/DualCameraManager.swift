@@ -720,13 +720,57 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         print("📹 Available formats: \(availableFormats.map { "0x\(String(format: "%X", $0))" })")
     }
 
+    // ✅ FIX Issue #8: Select format that supports target frame rate, then configure
+    nonisolated private func selectFormat(for device: AVCaptureDevice, targetFPS: Double, isMultiCam: Bool) -> AVCaptureDevice.Format? {
+        return device.formats
+            .filter { format in
+                // Must support target frame rate
+                let supportsFrameRate = format.videoSupportedFrameRateRanges.contains { range in
+                    range.maxFrameRate >= targetFPS && range.minFrameRate <= targetFPS
+                }
+
+                // Get dimensions
+                let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+
+                // For multi-cam, prefer 1080p or lower (multi-cam has resolution limits)
+                // For single-cam, allow up to 4K
+                let isReasonableResolution: Bool
+                if isMultiCam {
+                    isReasonableResolution = dimensions.height >= 720 && dimensions.height <= 1080
+                } else {
+                    isReasonableResolution = dimensions.height >= 1080 && dimensions.height <= 2160
+                }
+
+                // Check if format supports multi-cam if needed
+                let supportsMultiCam = !isMultiCam || format.isMultiCamSupported
+
+                return supportsFrameRate && isReasonableResolution && supportsMultiCam
+            }
+            .sorted { format1, format2 in
+                // Prefer higher resolution formats
+                let dims1 = CMVideoFormatDescriptionGetDimensions(format1.formatDescription)
+                let dims2 = CMVideoFormatDescriptionGetDimensions(format2.formatDescription)
+                return dims1.height > dims2.height
+            }
+            .first
+    }
+
     // ✅ FIX Issue #8: Configure frame rate with device capability verification
     private func configureFrameRate(for camera: AVCaptureDevice, mode: CaptureMode) async throws {
         let targetFrameRate = mode.frameRate
         var actualFrameRate = 30  // Safe default
         var foundSupport = false
 
-        // Try to find exact match or best alternative
+        // ✅ CRITICAL: Select format that supports target frame rate BEFORE setting it
+        if let format = selectFormat(for: camera, targetFPS: Double(targetFrameRate), isMultiCam: useMultiCam) {
+            camera.activeFormat = format
+            let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+            print("✅ Selected format: \(dims.width)x\(dims.height) for \(targetFrameRate)fps")
+        } else {
+            print("⚠️ No format found supporting \(targetFrameRate)fps, using default format")
+        }
+
+        // Try to find exact match or best alternative in the selected format
         for range in camera.activeFormat.videoSupportedFrameRateRanges {
             if range.maxFrameRate >= Double(targetFrameRate) &&
                range.minFrameRate <= Double(targetFrameRate) {
@@ -2069,6 +2113,14 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             defer { device.unlockForConfiguration() }
 
             let targetFrameRate = mode.frameRate
+
+            // ✅ CRITICAL: Select format that supports target frame rate BEFORE setting it
+            if let format = selectFormat(for: device, targetFPS: Double(targetFrameRate), isMultiCam: useMultiCam) {
+                device.activeFormat = format
+                let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                print("  Selected format: \(dims.width)x\(dims.height) for \(targetFrameRate)fps")
+            }
+
             for range in device.activeFormat.videoSupportedFrameRateRanges {
                 if range.maxFrameRate >= Double(targetFrameRate) {
                     device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: CMTimeScale(targetFrameRate))

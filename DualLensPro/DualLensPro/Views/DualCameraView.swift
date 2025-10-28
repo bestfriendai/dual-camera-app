@@ -329,7 +329,12 @@ struct DualCameraView: View {
                             duration: viewModel.timerCountdownDuration,
                             onComplete: {
                                 viewModel.showTimerCountdown = false
-                                viewModel.executePhotoCapture()
+                                // ✅ FIX Issue #1: Call appropriate function based on capture mode
+                                if viewModel.currentCaptureMode.isRecordingMode {
+                                    viewModel.executeVideoRecording()
+                                } else {
+                                    viewModel.executePhotoCapture()
+                                }
                             },
                             onCancel: {
                                 viewModel.cancelTimerCountdown()

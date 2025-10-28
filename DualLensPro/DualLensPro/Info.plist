@@ -17,15 +17,15 @@
 	<key>UIApplicationSceneManifestVersion</key>
 	<string>2</string>
 
-	<!-- Better permission descriptions -->
+	<!-- Better permission descriptions - App Store compliant (specific and detailed) -->
 	<key>NSCameraUsageDescription</key>
-	<string>DualLensPro needs camera access to record videos with both front and back cameras simultaneously</string>
+	<string>This app uses both front and back cameras simultaneously to record dual-perspective videos for your social media content.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>DualLensPro needs microphone access to record audio with your videos</string>
+	<string>This app records audio along with video to create complete social media content.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>DualLensPro needs permission to save your recorded videos to Photos</string>
+	<string>This app needs to save videos to your Photo Library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>DualLensPro needs access to show your recently saved videos</string>
+	<string>This app saves your recorded videos to your Photo Library.</string>
 
 	<!-- Disable dark mode flicker during launch -->
 	<key>UIUserInterfaceStyle</key>

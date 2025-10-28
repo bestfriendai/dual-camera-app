@@ -447,6 +447,18 @@ class CameraViewModel: ObservableObject {
         }
         print("✅ In recording mode: \(currentCaptureMode.rawValue)")
 
+        // ✅ FIX Issue #1: Honor timer for video recording (like photo capture)
+        // If timer is set, show countdown before starting recording
+        if timerDuration > 0 {
+            print("⏱️ Video recording timer set to \(timerDuration) seconds")
+            await MainActor.run {
+                timerCountdownDuration = timerDuration
+                showTimerCountdown = true
+            }
+            // The countdown view will call executeVideoRecording() after the timer completes
+            return
+        }
+
         // Trigger haptic feedback
         HapticManager.shared.recordingStart()
 
@@ -562,6 +574,24 @@ class CameraViewModel: ObservableObject {
             } catch {
                 HapticManager.shared.error()
                 setError(error.localizedDescription)
+            }
+        }
+    }
+
+    // ✅ FIX Issue #1: Execute video recording after timer countdown completes
+    func executeVideoRecording() {
+        Task {
+            do {
+                HapticManager.shared.recordingStart()
+
+                print("📹 About to call cameraManager.startRecording() after timer...")
+                try await cameraManager.startRecording()
+                print("✅ cameraManager.startRecording() completed after timer")
+                print("📹 New isRecording state: \(isRecording)")
+            } catch {
+                print("❌ Video recording error after timer: \(error)")
+                HapticManager.shared.error()
+                setError("Recording failed: \(error.localizedDescription)")
             }
         }
     }

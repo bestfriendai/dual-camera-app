@@ -50,6 +50,7 @@ struct CameraPreviewView: UIViewRepresentable {
             target: context.coordinator,
             action: #selector(Coordinator.handlePinch(_:))
         )
+        pinchGesture.delegate = context.coordinator  // ✅ Enable simultaneous gesture recognition
         view.addGestureRecognizer(pinchGesture)
 
         return view
@@ -68,7 +69,7 @@ struct CameraPreviewView: UIViewRepresentable {
         Coordinator(onZoomChange: onZoomChange, initialZoom: currentZoom, minZoom: minZoom, maxZoom: maxZoom)
     }
 
-    class Coordinator: NSObject {
+    class Coordinator: NSObject, UIGestureRecognizerDelegate {
         let onZoomChange: (CGFloat) -> Void
         var currentZoom: CGFloat
         var minZoom: CGFloat  // ✅ FIX: Actual device zoom range
@@ -105,6 +106,12 @@ struct CameraPreviewView: UIViewRepresentable {
             default:
                 break
             }
+        }
+
+        // ✅ Allow simultaneous gesture recognition for better button responsiveness
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                              shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            return true
         }
     }
     
