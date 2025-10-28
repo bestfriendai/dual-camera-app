@@ -11,7 +11,7 @@ import Photos
 import os
 
 @MainActor
-class DualCameraManager: NSObject, ObservableObject {
+class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDelegate after adding DeviceMonitorService.swift to Xcode project */ {
     // MARK: - Published Properties
     @Published var isSessionRunning = false
     @Published var recordingState: RecordingState = .idle {
@@ -78,8 +78,8 @@ class DualCameraManager: NSObject, ObservableObject {
     nonisolated(unsafe) private var audioOutput: AVCaptureAudioDataOutput?
 
     // MARK: - Photo Outputs
-    private var frontPhotoOutput: AVCapturePhotoOutput?
-    private var backPhotoOutput: AVCapturePhotoOutput?
+    nonisolated(unsafe) private var frontPhotoOutput: AVCapturePhotoOutput?
+    nonisolated(unsafe) private var backPhotoOutput: AVCapturePhotoOutput?
 
     // Photo capture delegate storage (thread-safe access)
     private let photoDelegateQueue = DispatchQueue(label: "com.duallens.photoDelegates")
@@ -90,8 +90,8 @@ class DualCameraManager: NSObject, ObservableObject {
     nonisolated(unsafe) private var lastBackPhotoData: Data?
 
     // MARK: - Preview Layers
-    var frontPreviewLayer: AVCaptureVideoPreviewLayer?
-    var backPreviewLayer: AVCaptureVideoPreviewLayer?
+    nonisolated(unsafe) var frontPreviewLayer: AVCaptureVideoPreviewLayer?
+    nonisolated(unsafe) var backPreviewLayer: AVCaptureVideoPreviewLayer?
 
     // MARK: - Recording (Thread-Safe Actor-Based)
     // RecordingCoordinator provides thread-safe access to all AVAssetWriter objects
@@ -113,11 +113,14 @@ class DualCameraManager: NSObject, ObservableObject {
     nonisolated(unsafe) private var isWriting = false
     nonisolated(unsafe) private var hasReceivedFirstVideoFrame = false
     nonisolated(unsafe) private var hasReceivedFirstAudioFrame = false
-    nonisolated(unsafe) private var isStopping = false
-    
+
     nonisolated(unsafe) private var lastVideoPTS: CMTime?
     nonisolated(unsafe) private var lastAudioPTS: CMTime?
     nonisolated(unsafe) private var dropAudioDuringStop = false
+
+    // ✅ FIX Issue #10: Frame dropping for backpressure
+    nonisolated(unsafe) private var lastProcessedFrameTime: [CameraPosition: CMTime] = [:]
+    private let minimumFrameInterval: Double = 1.0 / 60.0  // Max 60fps processing
 
     // MARK: - Dispatch Queues
     private let sessionQueue = DispatchQueue(label: "com.duallens.sessionQueue")
@@ -128,6 +131,20 @@ class DualCameraManager: NSObject, ObservableObject {
 
     // MARK: - Recording Quality
     nonisolated(unsafe) var recordingQuality: RecordingQuality = .high
+
+    // ✅ FIX Issue #13: Background audio configuration
+    // Using backing storage to allow access from nonisolated contexts
+    @Published var allowBackgroundAudio: Bool = false {
+        didSet {
+            _allowBackgroundAudioUnsafe = allowBackgroundAudio
+            if isSessionRunning {
+                Task {
+                    try? await reconfigureAudioSession()
+                }
+            }
+        }
+    }
+    private nonisolated(unsafe) var _allowBackgroundAudioUnsafe: Bool = false
 
     // MARK: - Capture Mode
     nonisolated(unsafe) var captureMode: CaptureMode = .video {
@@ -148,19 +165,43 @@ class DualCameraManager: NSObject, ObservableObject {
     // Flag to prevent zoom updates before camera is ready
     nonisolated(unsafe) private var isCameraSetupComplete = false
 
-    var frontZoomFactor: CGFloat = 1.0 { // Default to 1.0x for front camera (full ultra-wide FOV)
-        didSet {
-            // Only update zoom if camera setup is complete to prevent crashes during init
-            guard isCameraSetupComplete else { return }
-            updateZoom(for: .front, factor: frontZoomFactor)
+    // MARK: - Setup Protection (Issue #5)
+    // ✅ FIX Issue #1: Use OSAllocatedUnfairLock instead of NSLock (Swift 6 async-safe)
+    private let setupLock = OSAllocatedUnfairLock<Bool>(initialState: false)
+
+    // MARK: - Stop Protection (Issue #9)
+    // ✅ FIX Issue #1: Use OSAllocatedUnfairLock instead of NSLock (Swift 6 async-safe)
+    private let stopLock = OSAllocatedUnfairLock<Bool>(initialState: false)
+
+    // ✅ FIX Issue #7: Use backing storage to separate internal vs external updates
+    nonisolated(unsafe) private var _frontZoomFactor: CGFloat = 1.0
+    nonisolated(unsafe) private var _backZoomFactor: CGFloat = 1.0
+
+    var frontZoomFactor: CGFloat {
+        get { _frontZoomFactor }
+        set {
+            let oldValue = _frontZoomFactor
+            _frontZoomFactor = newValue
+
+            // ✅ CRITICAL ZOOM FIX: Use centralized validation method
+            // Only trigger update if session is ready and value changed
+            guard isCameraSetupComplete, oldValue != newValue else { return }
+
+            applyValidatedZoom(for: .front, factor: newValue)
         }
     }
 
-    var backZoomFactor: CGFloat = 1.0 {
-        didSet {
-            // Only update zoom if camera setup is complete to prevent crashes during init
-            guard isCameraSetupComplete else { return }
-            updateZoom(for: .back, factor: backZoomFactor)
+    var backZoomFactor: CGFloat {
+        get { _backZoomFactor }
+        set {
+            let oldValue = _backZoomFactor
+            _backZoomFactor = newValue
+
+            // ✅ CRITICAL ZOOM FIX: Use centralized validation method
+            // Only trigger update if session is ready and value changed
+            guard isCameraSetupComplete, oldValue != newValue else { return }
+
+            applyValidatedZoom(for: .back, factor: newValue)
         }
     }
 
@@ -293,26 +334,65 @@ class DualCameraManager: NSObject, ObservableObject {
         }
     }
 
+    // ✅ FIX Issue #13: Enhanced audio session configuration with background audio handling
     nonisolated private func configureAudioSession() throws {
         let session = AVAudioSession.sharedInstance()
 
         // Deactivate first to clear any previous configuration
         try? session.setActive(false, options: .notifyOthersOnDeactivation)
 
-        // Configure for video recording with mixed audio
+        // Check if other audio is playing
+        let isOtherAudioPlaying = session.isOtherAudioPlaying
+        print("🔊 Other audio playing: \(isOtherAudioPlaying)")
+
+        // Build audio session options
+        var options: AVAudioSession.CategoryOptions = [
+            .defaultToSpeaker,
+            .allowBluetoothA2DP,  // High quality Bluetooth (stereo output)
+            .allowBluetoothHFP,   // Hands-Free Profile for headset mics
+            .allowAirPlay
+        ]
+
+        if _allowBackgroundAudioUnsafe {
+            options.insert(.mixWithOthers)  // Allow background audio to continue
+            print("🔊 Audio mode: Mix with background audio")
+        } else {
+            options.insert(.duckOthers)     // Lower background audio volume
+            print("🔊 Audio mode: Duck background audio")
+        }
+
+        // Configure for video recording
         try session.setCategory(
             .playAndRecord,
             mode: .videoRecording,
-            options: [.defaultToSpeaker, .allowBluetooth, .mixWithOthers]
+            options: options
         )
 
         // Set preferred sample rate and IO buffer duration for better quality
         try? session.setPreferredSampleRate(48000.0)
-        try? session.setPreferredIOBufferDuration(0.005)
+        try? session.setPreferredIOBufferDuration(0.005)  // 5ms latency
 
         // Activate the session
-        try session.setActive(true, options: [])
-        print("🔊 AVAudioSession configured: playAndRecord/videoRecording, 48kHz")
+        try session.setActive(true, options: [.notifyOthersOnDeactivation])
+
+        print("🔊 AVAudioSession configured:")
+        print("   - Sample rate: \(session.sampleRate) Hz")
+        print("   - Buffer duration: \(session.ioBufferDuration)s")
+        print("   - Background audio: \(_allowBackgroundAudioUnsafe ? "allowed" : "ducked")")
+    }
+
+    // Helper to reconfigure audio session (can be called from MainActor)
+    private func reconfigureAudioSession() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            sessionQueue.async {
+                do {
+                    try self.configureAudioSession()
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 
     deinit {
@@ -347,6 +427,26 @@ class DualCameraManager: NSObject, ObservableObject {
 
     // MARK: - Setup Methods
     func setupSession() async throws {
+        // ✅ FIX Issue #5: Protect against concurrent setupSession() calls
+        let canProceed = setupLock.withLock { isSettingUp in
+            guard !isSettingUp else {
+                return false
+            }
+            isSettingUp = true
+            return true
+        }
+
+        guard canProceed else {
+            print("⚠️ setupSession already in progress - skipping duplicate call")
+            throw CameraError.setupInProgress
+        }
+
+        defer {
+            setupLock.withLock { isSettingUp in
+                isSettingUp = false
+            }
+        }
+
         print("📸 Setting up camera session...")
 
         // Configure audio session before capture setup
@@ -408,14 +508,19 @@ class DualCameraManager: NSObject, ObservableObject {
         await createPreviewLayers()
         print("✅ Preview layers created")
 
-        // ✅ Sync zoom factors with actual camera minimums for widest FOV
+        // ✅ FIX Issue #7: Sync zoom factors with actual camera minimums (use backing storage to avoid didSet)
         if let frontDevice = frontCameraInput?.device {
-            frontZoomFactor = frontDevice.minAvailableVideoZoomFactor
-            print("📸 Front camera zoom synced to min: \(frontZoomFactor)x for widest FOV")
+            _frontZoomFactor = frontDevice.minAvailableVideoZoomFactor
+            print("📸 Front camera zoom synced to min: \(_frontZoomFactor)x for widest FOV")
         }
         if let backDevice = backCameraInput?.device {
-            backZoomFactor = backDevice.minAvailableVideoZoomFactor
-            print("📸 Back camera zoom synced to min: \(backZoomFactor)x")
+            _backZoomFactor = backDevice.minAvailableVideoZoomFactor
+            print("📸 Back camera zoom synced to min: \(_backZoomFactor)x")
+        }
+
+        // ✅ CRITICAL ZOOM FIX: Device zoom ranges are now available - log them for debugging
+        if let fd = frontCameraInput?.device, let bd = backCameraInput?.device {
+            print("📊 Device zoom capabilities ready - front: \(fd.minAvailableVideoZoomFactor)x-\(fd.maxAvailableVideoZoomFactor)x, back: \(bd.minAvailableVideoZoomFactor)x-\(bd.maxAvailableVideoZoomFactor)x")
         }
 
         // Mark camera setup as complete - now safe to update zoom and other camera properties
@@ -444,16 +549,8 @@ class DualCameraManager: NSObject, ObservableObject {
             camera.automaticallyAdjustsVideoHDREnabled = true
         }
 
-        // Set frame rate based on capture mode
-        let targetFrameRate = captureMode.frameRate
-        for range in camera.activeFormat.videoSupportedFrameRateRanges {
-            if range.maxFrameRate >= Double(targetFrameRate) {
-                camera.activeVideoMinFrameDuration = CMTime(value: 1, timescale: CMTimeScale(targetFrameRate))
-                camera.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: CMTimeScale(targetFrameRate))
-                print("📹 Set frame rate to \(targetFrameRate)fps for \(captureMode.rawValue) mode")
-                break
-            }
-        }
+        // ✅ FIX Issue #8: Set frame rate with device capability verification
+        try await configureFrameRate(for: camera, mode: captureMode)
 
         // NOTE: Do NOT set zoom here - it will be set after setup is complete via the zoom properties
         // Setting zoom during init can cause issues with didSet observers
@@ -487,12 +584,8 @@ class DualCameraManager: NSObject, ObservableObject {
         videoOutput.setSampleBufferDelegate(self, queue: videoQueue)
         videoOutput.alwaysDiscardsLateVideoFrames = true
 
-        // ✅ Configure video settings - use 420v (VideoRange) to match writer adaptors
-        // This prevents color/gamma shifts between capture and encoding
-        let videoSettings: [String: Any] = [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
-        ]
-        videoOutput.videoSettings = videoSettings
+        // ✅ FIX Issue #6: Query device capabilities for pixel format instead of hardcoding
+        configureVideoOutput(videoOutput)
 
         if useMultiCam {
             // For multi-cam sessions, use addOutputWithNoConnections
@@ -515,14 +608,18 @@ class DualCameraManager: NSObject, ObservableObject {
             multiCamSession.addConnection(videoConnection)
 
             // Configure connection
-            videoConnection.videoOrientation = currentVideoOrientation()
+            let angle = videoRotationAngle()
+            if videoConnection.isVideoRotationAngleSupported(angle) {
+                videoConnection.videoRotationAngle = angle
+            }
             if videoConnection.isVideoStabilizationSupported {
                 videoConnection.preferredVideoStabilizationMode = .auto
             }
             if videoConnection.isVideoMirroringSupported && position == .front {
                 videoConnection.isVideoMirrored = true
             }
-            print("✅ Set video orientation to \(videoConnection.videoOrientation.rawValue) for \(position == .front ? "front" : "back") camera")
+            let positionName = position == .front ? "front" : "back"
+            print("✅ Set video rotation angle to \(angle)° for \(positionName) camera")
         } else {
             // For single-cam sessions, check and add normally
             guard singleCamSession.canAddOutput(videoOutput) else {
@@ -533,14 +630,18 @@ class DualCameraManager: NSObject, ObservableObject {
 
             // Configure connection
             if let connection = videoOutput.connection(with: .video) {
-                connection.videoOrientation = currentVideoOrientation()
+                let angle = videoRotationAngle()
+                if connection.isVideoRotationAngleSupported(angle) {
+                    connection.videoRotationAngle = angle
+                }
                 if connection.isVideoStabilizationSupported {
                     connection.preferredVideoStabilizationMode = .auto
                 }
                 if connection.isVideoMirroringSupported && position == .front {
                     connection.isVideoMirrored = true
                 }
-                print("✅ Set video orientation to \(connection.videoOrientation.rawValue) for \(position == .front ? "front" : "back") camera (single-cam)")
+                let positionName = position == .front ? "front" : "back"
+                print("✅ Set video rotation angle to \(angle)° for \(positionName) camera (single-cam)")
             }
         }
 
@@ -593,6 +694,68 @@ class DualCameraManager: NSObject, ObservableObject {
         }
     }
 
+    // ✅ FIX Issue #6: Configure video output with device capability query
+    private func configureVideoOutput(_ output: AVCaptureVideoDataOutput) {
+        let availableFormats = output.availableVideoPixelFormatTypes
+
+        // Preferred formats in priority order
+        let preferredFormats: [OSType] = [
+            kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,  // Most efficient for video
+            kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+            kCVPixelFormatType_32BGRA  // Fallback
+        ]
+
+        // Find first supported format
+        let selectedFormat = preferredFormats.first { format in
+            availableFormats.contains(format)
+        } ?? availableFormats.first ?? kCVPixelFormatType_32BGRA
+
+        let videoSettings: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: selectedFormat
+        ]
+
+        output.videoSettings = videoSettings
+
+        print("📹 Selected pixel format: \(selectedFormat) (0x\(String(format: "%X", selectedFormat)))")
+        print("📹 Available formats: \(availableFormats.map { "0x\(String(format: "%X", $0))" })")
+    }
+
+    // ✅ FIX Issue #8: Configure frame rate with device capability verification
+    private func configureFrameRate(for camera: AVCaptureDevice, mode: CaptureMode) async throws {
+        let targetFrameRate = mode.frameRate
+        var actualFrameRate = 30  // Safe default
+        var foundSupport = false
+
+        // Try to find exact match or best alternative
+        for range in camera.activeFormat.videoSupportedFrameRateRanges {
+            if range.maxFrameRate >= Double(targetFrameRate) &&
+               range.minFrameRate <= Double(targetFrameRate) {
+                // Exact support found
+                actualFrameRate = targetFrameRate
+                foundSupport = true
+                break
+            } else if range.maxFrameRate > Double(actualFrameRate) {
+                // Track highest supported rate as fallback
+                actualFrameRate = Int(range.maxFrameRate)
+            }
+        }
+
+        // Configure with actual supported frame rate
+        camera.activeVideoMinFrameDuration = CMTime(value: 1, timescale: CMTimeScale(actualFrameRate))
+        camera.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: CMTimeScale(actualFrameRate))
+
+        if !foundSupport {
+            print("⚠️ \(mode.displayName) requested \(targetFrameRate)fps but device max is \(actualFrameRate)fps")
+
+            // Update error message for user
+            await MainActor.run {
+                errorMessage = "This device supports up to \(actualFrameRate)fps"
+            }
+        } else {
+            print("✅ Frame rate set to \(actualFrameRate)fps for \(mode.displayName)")
+        }
+    }
+
     private func setupAudio() throws {
         guard let audioDevice = AVCaptureDevice.default(for: .audio) else {
             throw CameraError.audioDeviceNotFound
@@ -618,6 +781,8 @@ class DualCameraManager: NSObject, ObservableObject {
         audioOutput = audioDataOutput
     }
 
+    // Removed: duplicate videoRotationAngle() - see nonisolated version in Orientation Helpers section
+
     private func createPreviewLayers() async {
         if useMultiCam {
             // For multi-cam sessions, MUST use sessionWithNoConnection: to avoid crash
@@ -632,14 +797,18 @@ class DualCameraManager: NSObject, ObservableObject {
             if let frontInput = frontCameraInput,
                let frontPort = frontInput.ports(for: .video, sourceDeviceType: .builtInWideAngleCamera, sourceDevicePosition: .front).first {
                 let frontConnection = AVCaptureConnection(inputPort: frontPort, videoPreviewLayer: frontLayer)
-                frontConnection.videoRotationAngle = 90 // Portrait orientation
+                // ✅ FIX Issue #12: Use dynamic rotation angle based on current orientation
+                let angle = videoRotationAngle()
+                if frontConnection.isVideoRotationAngleSupported(angle) {
+                    frontConnection.videoRotationAngle = angle
+                }
                 if frontConnection.isVideoMirroringSupported {
                     frontConnection.automaticallyAdjustsVideoMirroring = false
                     frontConnection.isVideoMirrored = true
                 }
                 if multiCamSession.canAddConnection(frontConnection) {
                     multiCamSession.addConnection(frontConnection)
-                    print("✅ Added front preview layer connection")
+                    print("✅ Added front preview layer connection with rotation: \(angle)°")
                 }
             }
             frontPreviewLayer = frontLayer
@@ -652,10 +821,14 @@ class DualCameraManager: NSObject, ObservableObject {
             if let backInput = backCameraInput,
                let backPort = backInput.ports(for: .video, sourceDeviceType: .builtInWideAngleCamera, sourceDevicePosition: .back).first {
                 let backConnection = AVCaptureConnection(inputPort: backPort, videoPreviewLayer: backLayer)
-                backConnection.videoRotationAngle = 90 // Portrait orientation
+                // ✅ FIX Issue #12: Use dynamic rotation angle based on current orientation
+                let angle = videoRotationAngle()
+                if backConnection.isVideoRotationAngleSupported(angle) {
+                    backConnection.videoRotationAngle = angle
+                }
                 if multiCamSession.canAddConnection(backConnection) {
                     multiCamSession.addConnection(backConnection)
-                    print("✅ Added back preview layer connection")
+                    print("✅ Added back preview layer connection with rotation: \(angle)°")
                 }
             }
             backPreviewLayer = backLayer
@@ -665,7 +838,11 @@ class DualCameraManager: NSObject, ObservableObject {
             let backLayer = AVCaptureVideoPreviewLayer(session: singleCamSession)
             backLayer.videoGravity = .resizeAspectFill
             if let connection = backLayer.connection {
-                connection.videoRotationAngle = 90 // Portrait orientation
+                // ✅ FIX Issue #12: Use dynamic rotation angle based on current orientation
+                let angle = videoRotationAngle()
+                if connection.isVideoRotationAngleSupported(angle) {
+                    connection.videoRotationAngle = angle
+                }
             }
             backPreviewLayer = backLayer
 
@@ -678,23 +855,17 @@ class DualCameraManager: NSObject, ObservableObject {
     func startSession() {
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
-            if !self.activeSession.isRunning {
-                self.activeSession.startRunning()
 
-                Task { @MainActor in
+            Task { @MainActor in
+                if !self.activeSession.isRunning {
+                    self.activeSession.startRunning()
                     self.isSessionRunning = self.activeSession.isRunning
                     print("✅ Session started (\(self.useMultiCam ? "multi-cam" : "single-cam") mode)")
-                }
 
-                // Apply zooms after a delay to let session fully start
-                if self.isCameraSetupComplete {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                        guard let self = self else { return }
-                        self.updateZoom(for: .front, factor: self.frontZoomFactor)
-                        if self.useMultiCam {
-                            self.updateZoom(for: .back, factor: self.backZoomFactor)
-                        }
-                        print("✅ Initial zoom applied after session start")
+                    // ✅ CRITICAL ZOOM FIX: Use state-based zoom application instead of arbitrary delay
+                    // This waits for session to actually be running before applying zoom
+                    if self.isCameraSetupComplete {
+                        self.applyInitialZoom()
                     }
                 }
             }
@@ -704,9 +875,10 @@ class DualCameraManager: NSObject, ObservableObject {
     func stopSession() {
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
-            if self.activeSession.isRunning {
-                self.activeSession.stopRunning()
-                Task { @MainActor in
+
+            Task { @MainActor in
+                if self.activeSession.isRunning {
+                    self.activeSession.stopRunning()
                     self.isSessionRunning = false
                     print("🛑 Session stopped")
                 }
@@ -747,17 +919,145 @@ class DualCameraManager: NSObject, ObservableObject {
         }
     }
 
-    private func updateZoom(for position: CameraPosition, factor: CGFloat) {
-        sessionQueue.async { [weak self] in
-            guard let self = self else { return }
+    // ✅ CRITICAL ZOOM FIX: Wait for session to ACTUALLY be running instead of guessing with arbitrary delay
+    // This replaces the buggy 0.5s delay approach that caused zoom to be stuck at 1.0x
+    @MainActor
+    private func applyInitialZoom() {
+        let frontZoom = self.frontZoomFactor
+        let backZoom = self.backZoomFactor
+        let useMulti = self.useMultiCam
 
-            // Check if session is running
-            guard self.activeSession.isRunning else {
-                print("⚠️ Cannot update zoom - session not running")
-                return
+        Task {
+            // Wait for session to confirm it's running (max 3 seconds)
+            var iterations = 0
+            var isRunning = await MainActor.run { self.activeSession.isRunning }
+            while !isRunning && iterations < 300 {
+                try? await Task.sleep(nanoseconds: 10_000_000)  // 10ms
+                iterations += 1
+                isRunning = await MainActor.run { self.activeSession.isRunning }
             }
 
-            self.applyZoomDirectly(for: position, factor: factor)
+            if isRunning {
+                print("✅ Session confirmed running after \(iterations * 10)ms, applying initial zoom")
+                await MainActor.run {
+                    self.applyZoomDirectly(for: .front, factor: frontZoom)
+                    if useMulti {
+                        self.applyZoomDirectly(for: .back, factor: backZoom)
+                    }
+                }
+            } else {
+                print("❌ Session did not start within 3 second timeout, zoom not applied")
+            }
+        }
+    }
+
+    // ✅ CRITICAL ZOOM FIX: Centralized zoom validation - single source of truth for zoom application
+    // This method includes comprehensive validation: session running, device availability, connection, and range clamping
+    // Replaces multiple inconsistent zoom code paths (updateZoomSafely, updateZoom, applyZoomDirectly)
+    private func applyValidatedZoom(for position: CameraPosition, factor: CGFloat) {
+        Task { @MainActor in
+            let isRunning = self.activeSession.isRunning
+
+            self.sessionQueue.async { [weak self] in
+                guard let self = self else { return }
+
+                // Validation 1: Session running
+                guard isRunning else {
+                    print("⚠️ Cannot zoom \(position): session not running")
+                    return
+                }
+
+                // Validation 2: Get device
+                let device: AVCaptureDevice?
+                switch position {
+                case .front:
+                    device = self.frontCameraInput?.device
+                case .back:
+                    device = self.backCameraInput?.device
+                }
+
+                guard let device = device else {
+                    print("⚠️ Cannot zoom \(position): device not available")
+                    return
+                }
+
+                // Validation 3: Device connected
+                guard device.isConnected else {
+                    print("⚠️ Cannot zoom \(position): device not connected")
+                    return
+                }
+
+                // Validation 4: Clamp to device capabilities
+                let minZoom = device.minAvailableVideoZoomFactor
+                let maxZoom = device.maxAvailableVideoZoomFactor
+                let clampedFactor = min(max(factor, minZoom), maxZoom)
+
+                // Apply zoom with device lock
+                do {
+                    try device.lockForConfiguration()
+                    device.videoZoomFactor = clampedFactor
+                    device.unlockForConfiguration()
+
+                    print("✅ Zoom applied: \(position) = \(String(format: "%.2f", clampedFactor))x (requested: \(String(format: "%.2f", factor))x)")
+                } catch {
+                    print("❌ Failed to apply zoom to \(position): \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    // ✅ FIX Issue #7: Safe async zoom update
+    private func updateZoomSafely(for position: CameraPosition, factor: CGFloat) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            sessionQueue.async { [weak self] in
+                defer { continuation.resume() }
+
+                guard let self = self else { return }
+
+                let device: AVCaptureDevice?
+                switch position {
+                case .front:
+                    device = self.frontCameraInput?.device
+                case .back:
+                    device = self.backCameraInput?.device
+                }
+
+                guard let device = device else {
+                    print("⚠️ No device for \(position) camera")
+                    return
+                }
+
+                do {
+                    try device.lockForConfiguration()
+                    defer { device.unlockForConfiguration() }
+
+                    let clampedFactor = min(max(factor, device.minAvailableVideoZoomFactor),
+                                           device.maxAvailableVideoZoomFactor)
+                    device.videoZoomFactor = clampedFactor
+
+                    print("✅ \(position) zoom set to \(clampedFactor)x")
+                } catch {
+                    print("❌ Failed to set \(position) zoom: \(error)")
+                }
+            }
+        }
+    }
+
+    private func updateZoom(for position: CameraPosition, factor: CGFloat) {
+        Task { @MainActor in
+            let isRunning = self.activeSession.isRunning
+
+            self.sessionQueue.async { [weak self] in
+                guard let self = self else { return }
+
+                // Check if session is running
+                guard isRunning else {
+                    print("⚠️ Cannot update zoom - session not running")
+                    return
+                }
+
+                self.applyZoomDirectly(for: position, factor: factor)
+            }
         }
     }
 
@@ -979,7 +1279,9 @@ class DualCameraManager: NSObject, ObservableObject {
     }
 
     func toggleFocusLock(for position: CameraPosition) {
-        Task {
+        Task { @MainActor in
+            let currentLockState = self.isFocusLocked
+
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 sessionQueue.async { [weak self] in
                     guard let self = self else {
@@ -1004,8 +1306,8 @@ class DualCameraManager: NSObject, ObservableObject {
                         try device.lockForConfiguration()
                         defer { device.unlockForConfiguration() }
 
-                        // Toggle focus lock on main actor
-                        let focusLockMode: AVCaptureDevice.FocusMode = self.isFocusLocked ? .continuousAutoFocus : .locked
+                        // Use captured focus lock state
+                        let focusLockMode: AVCaptureDevice.FocusMode = currentLockState ? .continuousAutoFocus : .locked
 
                         Task { @MainActor in
                             self.isFocusLocked.toggle()
@@ -1180,21 +1482,32 @@ class DualCameraManager: NSObject, ObservableObject {
     }
 
     func stopRecording() async throws {
+        // ✅ FIX Issue #9: Atomic check-and-set for stopping state
+        // Check recording state first (MainActor property)
         guard recordingState == .recording else {
-            print("⚠️ stopRecording called but not recording, state: \(recordingState)")
+            print("⚠️ stopRecording called but not recording")
             return
         }
-        
-        if isStopping {
+
+        // Then check stopping flag with lock
+        let canProceed = stopLock.withLock { isStopping in
+            guard !isStopping else {
+                return false
+            }
+            isStopping = true
+            return true
+        }
+
+        guard canProceed else {
             print("⚠️ stopRecording already in progress")
             return
         }
-        
-        // Mark that we're stopping to avoid re-entry
-        isStopping = true
-        
-        // Ensure we reset this flag on any exit
-        defer { isStopping = false }
+
+        defer {
+            stopLock.withLock { isStopping in
+                isStopping = false
+            }
+        }
 
         print("🛑 Stopping recording...")
 
@@ -1203,8 +1516,9 @@ class DualCameraManager: NSObject, ObservableObject {
         print("✅ Stopped accepting new frames immediately")
 
         // ✅ Keep recording state as .recording during flush window so pending frames can still append
-        print("⏳ Flushing pending frames for 0.5s...")
-        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        // ✅ INCREASED from 0.5s to 1.0s for more reliable frame flushing (especially for 4K, thermal throttling)
+        print("⏳ Flushing pending frames for 1.0s...")
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1.0 seconds
 
         // ✅ CRITICAL: Wait for ALL pending frame append tasks to complete BEFORE stopping audio
         print("⏳ Waiting for pending frame tasks to complete...")
@@ -1286,10 +1600,32 @@ class DualCameraManager: NSObject, ObservableObject {
     
     // MARK: - Orientation Helpers
 
-    /// Get current video orientation for AVCaptureConnection
+    /// Get current video rotation angle for AVCaptureConnection (iOS 17+)
+    /// Returns rotation angle in degrees (0, 90, 180, 270)
+    nonisolated private func videoRotationAngle() -> CGFloat {
+        // Access UIDevice.current.orientation in a thread-safe way
+        let orientation = MainActor.assumeIsolated {
+            UIDevice.current.orientation
+        }
+        switch orientation {
+        case .landscapeLeft:
+            return 180  // landscapeRight in old API
+        case .landscapeRight:
+            return 0    // landscapeLeft in old API
+        case .portraitUpsideDown:
+            return 270
+        default:  // portrait
+            return 90
+        }
+    }
+
+    /// Get current video orientation for AVCaptureConnection (deprecated iOS 17+)
     /// Maps device orientation to camera space (note the inversion for landscape)
-    private func currentVideoOrientation() -> AVCaptureVideoOrientation {
-        let orientation = UIDevice.current.orientation
+    @available(*, deprecated, message: "Use videoRotationAngle() instead")
+    nonisolated private func currentVideoOrientation() -> AVCaptureVideoOrientation {
+        let orientation = MainActor.assumeIsolated {
+            UIDevice.current.orientation
+        }
         switch orientation {
         case .landscapeLeft:
             return .landscapeRight  // Camera space vs UI space inversion
@@ -1308,28 +1644,32 @@ class DualCameraManager: NSObject, ObservableObject {
         let orientation = UIDevice.current.orientation
         print("📱 Current device orientation: \(orientation.rawValue) (\(orientationName(orientation)))")
 
+        // ✅ CRITICAL FIX: videoRotationAngle on AVCaptureConnection sets METADATA only
+        // The actual pixel buffers are STILL in landscape (1920x1080)
+        // We need to apply transform to rotate them for proper playback
         let transform: CGAffineTransform
         switch orientation {
-        case .portrait:
-            // Device held upright - rotate 90° counter-clockwise to match preview
+        case .portrait, .unknown, .faceUp, .faceDown:
+            // Portrait mode - rotate 90° counter-clockwise
+            // This rotates 1920x1080 landscape buffer to display as portrait
             transform = CGAffineTransform(rotationAngle: .pi / 2)
-            print("🔄 Using 90° (counter-clockwise) transform for portrait")
+            print("🔄 Using 90° transform for portrait")
         case .portraitUpsideDown:
-            // Device upside down - rotate 90° clockwise
+            // Portrait upside down - rotate 90° clockwise
             transform = CGAffineTransform(rotationAngle: -.pi / 2)
-            print("🔄 Using -90° (clockwise) transform for portrait upside down")
+            print("🔄 Using -90° transform for portrait upside down")
         case .landscapeLeft:
-            // Device rotated left (home button on left) - no rotation needed
+            // Landscape left - no rotation needed
             transform = .identity
             print("🔄 Using identity transform for landscape left")
         case .landscapeRight:
-            // Device rotated right (home button on right) - rotate 180°
+            // Landscape right - rotate 180°
             transform = CGAffineTransform(rotationAngle: .pi)
             print("🔄 Using 180° transform for landscape right")
-        default:
-            // Default to portrait if orientation is unknown/face up/face down
+        @unknown default:
+            // Default to 90° for unknown orientations (assume portrait)
             transform = CGAffineTransform(rotationAngle: .pi / 2)
-            print("🔄 Using 90° (counter-clockwise) transform for default/unknown orientation")
+            print("🔄 Using 90° transform for unknown orientation")
         }
 
         return transform
@@ -1351,36 +1691,73 @@ class DualCameraManager: NSObject, ObservableObject {
     /// Update video orientation on all active connections
     @objc nonisolated private func deviceOrientationDidChange() {
         print("📱 Device orientation changed - updating video connections")
-        sessionQueue.async { [weak self] in
+
+        // Capture session running state on MainActor before async work
+        Task { @MainActor [weak self] in
             guard let self = self else { return }
-            let orientation = self.currentVideoOrientation()
+            let isRunning = self.activeSession.isRunning
 
-            // Update front video output connection
-            if let frontOutput = self.frontVideoOutput,
-               let connection = frontOutput.connection(with: .video) {
-                connection.videoOrientation = orientation
-                print("✅ Updated front video orientation to \(orientation.rawValue)")
-            }
+            // Now do the work on sessionQueue
+            self.sessionQueue.async { [weak self] in
+                guard let self = self else { return }
 
-            // Update back video output connection
-            if let backOutput = self.backVideoOutput,
-               let connection = backOutput.connection(with: .video) {
-                connection.videoOrientation = orientation
-                print("✅ Updated back video orientation to \(orientation.rawValue)")
-            }
+                // ✅ FIX: Don't update orientation if session isn't running yet
+                // This prevents crashes during initialization
+                guard isRunning else {
+                    print("⚠️ Session not running yet - skipping orientation update")
+                    return
+                }
 
-            // Update front photo output connection
-            if let frontPhoto = self.frontPhotoOutput,
-               let connection = frontPhoto.connection(with: .video) {
-                connection.videoOrientation = orientation
-                print("✅ Updated front photo orientation to \(orientation.rawValue)")
-            }
+                let angle = self.videoRotationAngle()
 
-            // Update back photo output connection
-            if let backPhoto = self.backPhotoOutput,
-               let connection = backPhoto.connection(with: .video) {
-                connection.videoOrientation = orientation
-                print("✅ Updated back photo orientation to \(orientation.rawValue)")
+                // Update front video output connection
+                if let frontOutput = self.frontVideoOutput,
+                   let connection = frontOutput.connection(with: .video) {
+                    if connection.isVideoRotationAngleSupported(angle) {
+                        connection.videoRotationAngle = angle
+                    }
+                    print("✅ Updated front video rotation to \(angle)°")
+                }
+
+                // Update back video output connection
+                if let backOutput = self.backVideoOutput,
+                   let connection = backOutput.connection(with: .video) {
+                    if connection.isVideoRotationAngleSupported(angle) {
+                        connection.videoRotationAngle = angle
+                    }
+                    print("✅ Updated back video rotation to \(angle)°")
+                }
+
+                // Update front photo output connection
+                if let frontPhoto = self.frontPhotoOutput,
+                   let connection = frontPhoto.connection(with: .video) {
+                    if connection.isVideoRotationAngleSupported(angle) {
+                        connection.videoRotationAngle = angle
+                    }
+                    print("✅ Updated front photo rotation to \(angle)°")
+                }
+
+                // Update back photo output connection
+                if let backPhoto = self.backPhotoOutput,
+                   let connection = backPhoto.connection(with: .video) {
+                    if connection.isVideoRotationAngleSupported(angle) {
+                        connection.videoRotationAngle = angle
+                    }
+                    print("✅ Updated back photo rotation to \(angle)°")
+                }
+
+                // ✅ FIX Issue #12: Update preview layer connections
+                if let frontConnection = self.frontPreviewLayer?.connection,
+                   frontConnection.isVideoRotationAngleSupported(angle) {
+                    frontConnection.videoRotationAngle = angle
+                    print("✅ Updated front preview rotation to \(angle)°")
+                }
+
+                if let backConnection = self.backPreviewLayer?.connection,
+                   backConnection.isVideoRotationAngleSupported(angle) {
+                    backConnection.videoRotationAngle = angle
+                    print("✅ Updated back preview rotation to \(angle)°")
+                }
             }
         }
     }
@@ -1398,23 +1775,16 @@ class DualCameraManager: NSObject, ObservableObject {
         let bitRate = recordingQuality.bitRate
         let frameRate = captureMode.frameRate  // ✅ Get dynamic frame rate from capture mode
 
-        // ✅ Determine if we need to swap dimensions based on orientation
-        let orientation = UIDevice.current.orientation
-        let isPortrait = orientation == .portrait || orientation == .portraitUpsideDown ||
-                        orientation == .unknown || orientation == .faceUp || orientation == .faceDown
+        // ✅ CRITICAL FIX: Camera buffers are ALWAYS in landscape (1920x1080)
+        // videoRotationAngle on AVCaptureConnection only sets metadata, doesn't rotate pixels
+        // We use the actual buffer dimensions and apply transform to rotate for playback
+        let dimensions = (width: baseDimensions.width, height: baseDimensions.height)
+        print("📱 Using buffer dimensions: \(dimensions.width)x\(dimensions.height)")
 
-        // ✅ Swap dimensions for portrait mode (1080x1920 instead of 1920x1080)
-        let dimensions: (width: Int, height: Int)
-        if isPortrait {
-            dimensions = (width: baseDimensions.height, height: baseDimensions.width)
-            print("📱 Portrait mode: Using dimensions \(dimensions.width)x\(dimensions.height)")
-        } else {
-            dimensions = (width: baseDimensions.width, height: baseDimensions.height)
-            print("📱 Landscape mode: Using dimensions \(dimensions.width)x\(dimensions.height)")
-        }
-
-        // ✅ Use identity transform since dimensions are already correct
-        let transform = CGAffineTransform.identity
+        // ✅ FIX: Calculate proper transform for video orientation
+        // This rotates the landscape buffer to display correctly in portrait/landscape
+        let transform = currentVideoTransform()
+        print("🔄 Using transform: \(transform)")
 
         print("🎬 Setting up writers with \(frameRate)fps, dimensions: \(dimensions.width)x\(dimensions.height)")
 
@@ -1422,7 +1792,7 @@ class DualCameraManager: NSObject, ObservableObject {
         let coordinator = RecordingCoordinator()
         self.recordingCoordinator = coordinator
 
-        // Configure the coordinator (thread-safe setup) with correct dimensions
+        // Configure the coordinator (thread-safe setup) with correct dimensions and transform
         try await coordinator.configure(
             frontURL: frontURL,
             backURL: backURL,
@@ -1430,7 +1800,7 @@ class DualCameraManager: NSObject, ObservableObject {
             dimensions: dimensions,
             bitRate: bitRate,
             frameRate: frameRate,  // ✅ Pass dynamic frame rate
-            videoTransform: transform  // ✅ Identity transform (dimensions handle orientation)
+            videoTransform: transform  // ✅ Proper orientation transform
         )
 
         print("✅ RecordingCoordinator configured and ready")
@@ -1550,81 +1920,38 @@ class DualCameraManager: NSObject, ObservableObject {
         print("✅ All videos saved to Photos library")
     }
 
+    // ✅ FIX Issue #11: Save directly from temp directory - NO intermediate copy needed
     private func saveVideoToPhotos(url: URL, title: String) async throws {
-        print("🔍 [1] saveVideoToPhotos START for: \(title)")
+        print("📸 Saving \(title) video to Photos: \(url.lastPathComponent)")
 
-        // Verify file exists before trying to save
+        // Verify file exists
         guard FileManager.default.fileExists(atPath: url.path) else {
             print("❌ Video file doesn't exist at: \(url.path)")
             throw CameraError.failedToSaveToPhotos
         }
 
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
-        print("🔍 [2] File exists at temp location, size: \(fileSize) bytes")
-        print("🔍 [3] Original URL: \(url.path)")
+        print("📸 File size: \(fileSize) bytes (\(String(format: "%.2f", Double(fileSize) / 1_048_576)) MB)")
 
-        // ✅ FIX: Copy to Documents directory first (Photos can't access temp files due to sandbox)
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let permanentURL = documentsPath.appendingPathComponent(url.lastPathComponent)
-
-        print("🔍 [4] Documents path: \(documentsPath.path)")
-        print("🔍 [5] Permanent URL: \(permanentURL.path)")
-
-        // Remove existing file if present
-        if FileManager.default.fileExists(atPath: permanentURL.path) {
-            try? FileManager.default.removeItem(at: permanentURL)
-            print("🔍 [6] Removed existing file at Documents")
-        }
-
-        // Copy to Documents
-        do {
-            print("🔍 [7] About to copy to Documents...")
-            try FileManager.default.copyItem(at: url, to: permanentURL)
-            print("🔍 [8] Copy succeeded!")
-        } catch {
-            print("❌ Failed to copy video to Documents: \(error)")
-            throw error
-        }
-
-        print("🔍 [9] About to save to Photos library...")
-
-        // ✅ Use performChangesAndWait on a background thread to avoid blocking main thread
+        // Save directly from temp directory - PHPhotoLibrary CAN access temp files
         return try await Task.detached {
-            print("🔍 [10] On background thread, about to call performChangesAndWait")
-
-            var saveError: Error?
-
             do {
                 try PHPhotoLibrary.shared().performChangesAndWait {
-                    print("🔍 [11] Inside performChangesAndWait block")
-                    let creationRequest = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: permanentURL)
-                    print("🔍 [12] Creation request: \(String(describing: creationRequest))")
-
-                    if creationRequest == nil {
-                        print("🔍 [ERROR] Creation request is nil!")
-                    }
-
-                    creationRequest?.creationDate = Date()
-                    print("🔍 [13] Set creation date")
+                    let request = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
+                    request?.creationDate = Date()
                 }
-                print("🔍 [14] performChangesAndWait completed successfully")
+                print("✅ \(title) video saved to Photos")
             } catch {
-                print("🔍 [ERROR] performChangesAndWait failed: \(error)")
-                saveError = error
-            }
-
-            // Clean up the Documents copy
-            defer {
-                do {
-                    try FileManager.default.removeItem(at: permanentURL)
-                    print("🔍 [15] Cleaned up Documents copy")
-                } catch {
-                    print("🔍 [WARNING] Failed to clean up: \(error)")
-                }
-            }
-
-            if let error = saveError {
+                print("❌ Failed to save \(title) video: \(error)")
                 throw error
+            }
+
+            // Clean up temp file after successful save
+            do {
+                try FileManager.default.removeItem(at: url)
+                print("✅ Cleaned up temp file: \(url.lastPathComponent)")
+            } catch {
+                print("⚠️ Failed to clean up temp file: \(error)")
             }
         }.value
     }
@@ -1680,12 +2007,21 @@ class DualCameraManager: NSObject, ObservableObject {
 
     // MARK: - Camera Switching
     func switchCameras() {
-        // Toggle the switched state
+        // ✅ FIX: Toggle the switched state with haptic feedback
         isCamerasSwitched.toggle()
+
+        // Trigger haptic feedback for the switch
+        HapticManager.shared.modeChange()
 
         // This property can be observed by the UI layer to swap preview positions
         // The actual camera feeds remain the same, just their display positions change
-        print("📱 Cameras switched: \(isCamerasSwitched ? "Front on bottom" : "Front on top")")
+        print("🔄 Cameras switched: \(isCamerasSwitched ? "Front on bottom, Back on top" : "Front on top, Back on bottom")")
+
+        // Update the UI on main thread
+        Task { @MainActor in
+            // Force UI update by toggling a published property
+            self.objectWillChange.send()
+        }
     }
 
     // MARK: - Capture Mode Management
@@ -1869,7 +2205,19 @@ class DualCameraManager: NSObject, ObservableObject {
             return
         }
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        
+        let position: CameraPosition = isFront ? .front : .back
+
+        // ✅ FIX Issue #10: Implement frame dropping if we're falling behind
+        if let lastTime = lastProcessedFrameTime[position] {
+            let timeSinceLastFrame = CMTimeSubtract(pts, lastTime).seconds
+
+            if timeSinceLastFrame < minimumFrameInterval * 0.9 {  // Allow 10% tolerance
+                // Too soon, drop this frame
+                return
+            }
+        }
+
+        lastProcessedFrameTime[position] = pts
         lastVideoPTS = pts
 
         // Use the coordinator to append pixel buffers (thread-safe via actor)
@@ -1880,23 +2228,26 @@ class DualCameraManager: NSObject, ObservableObject {
 
         // ✅ FIX: Track each append task so we can wait for all to complete
         let taskID = UUID()
-        pendingTasksLock.withLock { $0.insert(taskID) }
+        let _ = pendingTasksLock.withLock { $0.insert(taskID) }
 
-        Task { [box, isFront, isBack, coordinator, taskID, weak self] in
-            defer {
-                // Remove from pending tasks when done
-                self?.pendingTasksLock.withLock { $0.remove(taskID) }
-            }
-
-            do {
-                if isFront {
-                    try await coordinator.appendFrontPixelBuffer(box.buffer, time: box.time)
-                } else if isBack {
-                    // appendBackPixelBuffer also appends to combined writer
-                    try await coordinator.appendBackPixelBuffer(box.buffer, time: box.time)
+        // ✅ FIX Issue #10: Process on writer queue for natural backpressure
+        writerQueue.async { [weak self] in
+            Task { [box, isFront, isBack, coordinator, taskID] in
+                defer {
+                    // Remove from pending tasks when done
+                    let _ = self?.pendingTasksLock.withLock { $0.remove(taskID) }
                 }
-            } catch {
-                print("❌ Error appending pixel buffer: \(error)")
+
+                do {
+                    if isFront {
+                        try await coordinator.appendFrontPixelBuffer(box.buffer, time: box.time)
+                    } else if isBack {
+                        // appendBackPixelBuffer also appends to combined writer
+                        try await coordinator.appendBackPixelBuffer(box.buffer, time: box.time)
+                    }
+                } catch {
+                    print("❌ Error appending pixel buffer: \(error)")
+                }
             }
         }
     }
@@ -1985,6 +2336,7 @@ extension DualCameraManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCap
 
 // MARK: - Errors
 enum CameraError: LocalizedError {
+    case setupInProgress
     case multiCamNotSupported
     case deviceNotFound(AVCaptureDevice.Position)
     case cannotAddInput(AVCaptureDevice.Position)
@@ -2005,6 +2357,8 @@ enum CameraError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .setupInProgress:
+            return "Camera setup is already in progress"
         case .multiCamNotSupported:
             return "Multi-camera recording is not supported on this device"
         case .deviceNotFound(let position):
@@ -2149,5 +2503,84 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate, @un
             }
         }
     }
+
+    /* TODO: Uncomment after adding DeviceMonitorService.swift to Xcode project
+    // MARK: - Device Monitor Delegate (Issues #4.6, #4.7, #4.8)
+
+    nonisolated func deviceMonitor(_ monitor: DeviceMonitorService, didUpdateThermalState state: ProcessInfo.ThermalState) {
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            print("🌡️ Thermal state changed: \(state)")
+
+            // Check if recording should be stopped
+            let (shouldStop, reason) = monitor.shouldStopRecording()
+            if shouldStop, self.recordingState == .recording {
+                if let reason = reason.first {
+                    self.errorMessage = reason
+                }
+                do {
+                    try await self.stopRecording()
+                    print("⚠️ Recording stopped due to thermal state: \(state)")
+                } catch {
+                    print("❌ Failed to stop recording after thermal warning: \(error)")
+                }
+            }
+        }
+    }
+
+    nonisolated func deviceMonitor(_ monitor: DeviceMonitorService, didUpdateBatteryLevel level: Float, state: UIDevice.BatteryState) {
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            let percentage = Int(level * 100)
+            print("🔋 Battery level: \(percentage)% (\(state))")
+
+            // Check if recording should be stopped or warned
+            let (shouldStop, reasons, warnings) = monitor.shouldStopRecording()
+
+            if shouldStop, self.recordingState == .recording {
+                if let reason = reasons.first {
+                    self.errorMessage = reason
+                }
+                do {
+                    try await self.stopRecording()
+                    print("⚠️ Recording stopped due to low battery: \(percentage)%")
+                } catch {
+                    print("❌ Failed to stop recording after battery warning: \(error)")
+                }
+            } else if let warning = warnings.first {
+                // Show warning but don't stop
+                self.errorMessage = warning
+            }
+        }
+    }
+
+    nonisolated func deviceMonitor(_ monitor: DeviceMonitorService, didReceiveMemoryWarning: Void) {
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            print("⚠️ Memory warning received")
+
+            // Perform cleanup
+            monitor.performMemoryCleanup()
+
+            // Check if recording should be stopped
+            let (shouldStop, reasons, warnings) = monitor.shouldStopRecording()
+
+            if shouldStop, self.recordingState == .recording {
+                if let reason = reasons.first {
+                    self.errorMessage = reason
+                }
+                do {
+                    try await self.stopRecording()
+                    print("⚠️ Recording stopped due to memory pressure")
+                } catch {
+                    print("❌ Failed to stop recording after memory warning: \(error)")
+                }
+            } else if let warning = warnings.first {
+                // Show warning but don't stop
+                self.errorMessage = warning
+            }
+        }
+    }
+    */
 }
 

@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import AVFoundation
 
 enum CaptureMode: String, CaseIterable, Identifiable, Sendable {
     case groupPhoto = "GROUP PHOTO"
@@ -51,12 +52,7 @@ enum CaptureMode: String, CaseIterable, Identifiable, Sendable {
     }
 
     var requiresPremium: Bool {
-        switch self {
-        case .groupPhoto, .photo, .video:
-            return false
-        case .action, .switchScreen:
-            return true
-        }
+        return false
     }
 
     var isRecordingMode: Bool {
@@ -77,7 +73,7 @@ enum CaptureMode: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    // Frame rate for video modes
+    // Frame rate for video modes (preferred rate)
     var frameRate: Int {
         switch self {
         case .action:
@@ -86,6 +82,43 @@ enum CaptureMode: String, CaseIterable, Identifiable, Sendable {
             return 60
         default:
             return 30
+        }
+    }
+
+    // ✅ FIX Issue #18: Device-specific frame rate with fallback
+    func actualFrameRate(for device: AVCaptureDevice) -> Int {
+        let preferred = frameRate
+        let supported = device.activeFormat.videoSupportedFrameRateRanges
+
+        // Check if preferred rate is supported
+        for range in supported {
+            if range.minFrameRate <= Double(preferred) &&
+               range.maxFrameRate >= Double(preferred) {
+                return preferred
+            }
+        }
+
+        // Find highest supported rate as fallback
+        let maxSupported = supported.map { Int($0.maxFrameRate) }.max() ?? 30
+
+        print("⚠️ Device doesn't support \(preferred)fps, falling back to \(maxSupported)fps")
+
+        return maxSupported
+    }
+
+    // Check if mode is fully supported on device
+    func isSupported(on device: AVCaptureDevice) -> Bool {
+        let actual = actualFrameRate(for: device)
+        return actual == frameRate
+    }
+
+    // User-facing description of support
+    func supportDescription(for device: AVCaptureDevice) -> String {
+        if isSupported(on: device) {
+            return "\(displayName) (\(frameRate)fps)"
+        } else {
+            let actual = actualFrameRate(for: device)
+            return "\(displayName) (\(actual)fps - device limited)"
         }
     }
 

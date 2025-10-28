@@ -14,6 +14,8 @@ struct CameraPreviewView: UIViewRepresentable {
     let position: CameraPosition
     let onZoomChange: (CGFloat) -> Void
     let currentZoom: CGFloat
+    let minZoom: CGFloat  // ✅ FIX: Use actual device zoom range
+    let maxZoom: CGFloat
     
     func makeUIView(context: Context) -> PreviewUIView {
         let view = PreviewUIView()
@@ -58,22 +60,28 @@ struct CameraPreviewView: UIViewRepresentable {
             layer.frame = uiView.bounds
         }
         context.coordinator.currentZoom = currentZoom
+        context.coordinator.minZoom = minZoom  // ✅ FIX: Update zoom ranges
+        context.coordinator.maxZoom = maxZoom
     }
-    
+
     func makeCoordinator() -> Coordinator {
-        Coordinator(onZoomChange: onZoomChange, initialZoom: currentZoom)
+        Coordinator(onZoomChange: onZoomChange, initialZoom: currentZoom, minZoom: minZoom, maxZoom: maxZoom)
     }
-    
+
     class Coordinator: NSObject {
         let onZoomChange: (CGFloat) -> Void
         var currentZoom: CGFloat
+        var minZoom: CGFloat  // ✅ FIX: Actual device zoom range
+        var maxZoom: CGFloat
         var lastScale: CGFloat = 1.0
-        
-        init(onZoomChange: @escaping (CGFloat) -> Void, initialZoom: CGFloat) {
+
+        init(onZoomChange: @escaping (CGFloat) -> Void, initialZoom: CGFloat, minZoom: CGFloat, maxZoom: CGFloat) {
             self.onZoomChange = onZoomChange
             self.currentZoom = initialZoom
+            self.minZoom = minZoom
+            self.maxZoom = maxZoom
         }
-        
+
         @MainActor
         @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
             switch gesture.state {
@@ -86,8 +94,9 @@ struct CameraPreviewView: UIViewRepresentable {
                 let delta = (scale - lastScale) * 0.5
                 let newZoom = currentZoom * (1 + delta)
 
-                // Clamp between 0.5 and 10.0 (allow zoom out to 0.5x)
-                let clampedZoom = min(max(newZoom, 0.5), 10.0)
+                // ✅ CRITICAL ZOOM FIX: Clamp to actual device capabilities instead of hardcoded 0.5-10.0
+                // This fixes the "zoom stuck at 1.0x" issue where gestures requested invalid zoom levels
+                let clampedZoom = min(max(newZoom, minZoom), maxZoom)
 
                 onZoomChange(clampedZoom)
                 lastScale = scale

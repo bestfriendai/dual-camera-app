@@ -35,11 +35,7 @@ struct ModeSelectorView: View {
     }
 
     private func selectMode(_ mode: CaptureMode) {
-        // Check if mode requires premium
-        if mode.requiresPremium && !viewModel.isPremium {
-            viewModel.showPremiumPrompt()
-            return
-        }
+        // Premium gating disabled for all modes
 
         selectedMode = mode
         viewModel.setCaptureMode(mode)

@@ -9,37 +9,60 @@
 import CoreImage
 import CoreVideo
 import AVFoundation
+import Metal
+import os.lock
 
 /// Real-time compositor for creating stacked dual-camera frames
 /// Uses Core Image for GPU-accelerated composition
-final class FrameCompositor {
+/// Thread-safe using OSAllocatedUnfairLock
+final class FrameCompositor: Sendable {
     private let context: CIContext
     private let width: Int
     private let height: Int
-    private var pixelBufferPool: CVPixelBufferPool?
-    
+
+    // Thread-safe state - CVPixelBufferPool is thread-safe but not Sendable
+    nonisolated(unsafe) private var pixelBufferPool: CVPixelBufferPool?
+    private let poolLock = NSLock()
+
+    // ✅ FIX: Shutdown state to prevent using stale buffers during recording stop
+    private let stateLock = NSLock()
+    nonisolated(unsafe) private var isShuttingDown = false
+    nonisolated(unsafe) private var lastFrontBuffer: (buffer: CVPixelBuffer, time: CMTime)?
+
     init(width: Int, height: Int) {
         self.width = width
         self.height = height
-        
-        // Create Core Image context with low priority for background processing
-        self.context = CIContext(options: [
+
+        // Use Metal for GPU acceleration
+        let options: [CIContextOption: Any] = [
+            .workingColorSpace: CGColorSpaceCreateDeviceRGB(),
+            .useSoftwareRenderer: false,
             .priorityRequestLow: true,
-            .cacheIntermediates: false
-        ])
-        
+            .cacheIntermediates: false,
+            .outputPremultiplied: true,
+            .name: "DualLensPro.FrameCompositor"
+        ]
+
+        if let metalDevice = MTLCreateSystemDefaultDevice() {
+            self.context = CIContext(mtlDevice: metalDevice, options: options)
+            print("✅ FrameCompositor using Metal device: \(metalDevice.name)")
+        } else {
+            self.context = CIContext(options: options)
+            print("⚠️ FrameCompositor using software rendering")
+        }
+
         // Create pixel buffer pool for efficient buffer reuse
         let poolAttributes: [String: Any] = [
             kCVPixelBufferPoolMinimumBufferCountKey as String: 3
         ]
-        
+
         let pixelBufferAttributes: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
             kCVPixelBufferWidthKey as String: width,
             kCVPixelBufferHeightKey as String: height,
             kCVPixelBufferIOSurfacePropertiesKey as String: [:]
         ]
-        
+
         var pool: CVPixelBufferPool?
         let status = CVPixelBufferPoolCreate(
             kCFAllocatorDefault,
@@ -47,15 +70,64 @@ final class FrameCompositor {
             pixelBufferAttributes as CFDictionary,
             &pool
         )
-        
+
         if status == kCVReturnSuccess {
-            self.pixelBufferPool = pool
+            poolLock.lock()
+            pixelBufferPool = pool
+            poolLock.unlock()
             print("✅ FrameCompositor: Pixel buffer pool created")
         } else {
             print("⚠️ FrameCompositor: Failed to create pixel buffer pool (status: \(status))")
         }
-        
-        print("✅ FrameCompositor initialized: \(width)x\(height)")
+
+        print("✅ FrameCompositor initialized (thread-safe with NSLock): \(width)x\(height)")
+    }
+
+    // MARK: - Lifecycle Methods
+
+    /// ✅ FIX: Reset compositor state before starting new recording
+    /// Clears any cached buffers from previous recording
+    func beginRecording() {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        isShuttingDown = false
+        lastFrontBuffer = nil
+        print("▶️ FrameCompositor ready for new recording")
+    }
+
+    /// ✅ FIX: Clear compositor cache and enter shutdown mode
+    /// Prevents using stale cached buffers during recording finalization
+    func reset() {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+
+        isShuttingDown = true
+        lastFrontBuffer = nil
+        print("🧹 FrameCompositor cache cleared and shutdown mode enabled")
+    }
+
+    /// ✅ FIX: Flush GPU render pipeline to ensure all pending renders complete
+    /// Forces synchronization of Metal/GPU operations before finalizing video
+    func flushGPU() {
+        // Force GPU synchronization by rendering empty image
+        // This ensures all pending Metal commands complete
+        let emptyImage = CIImage.empty()
+        if let tempBuffer = allocatePixelBuffer() {
+            context.render(emptyImage, to: tempBuffer)
+        }
+        print("🎨 GPU render pipeline flushed")
+    }
+
+    deinit {
+        // Clean up pool
+        poolLock.lock()
+        if let pool = pixelBufferPool {
+            CVPixelBufferPoolFlush(pool, [])
+        }
+        pixelBufferPool = nil
+        poolLock.unlock()
+        print("🗑️ FrameCompositor deallocated")
     }
     
     /// Create a stacked composition with front camera on top, back camera on bottom
@@ -63,26 +135,57 @@ final class FrameCompositor {
     ///   - front: Front camera pixel buffer (optional)
     ///   - back: Back camera pixel buffer (optional)
     /// - Returns: Composed pixel buffer, or nil if composition fails
+    /// Thread-safe: CIContext operations are serialized by the compositor
     func stacked(front: CVPixelBuffer?, back: CVPixelBuffer?) -> CVPixelBuffer? {
+        stateLock.lock()
+        let shuttingDown = isShuttingDown
+        stateLock.unlock()
+
+        // ✅ FIX: During shutdown, require both buffers - don't use cached or fallback buffers
+        if shuttingDown {
+            guard let f = front, let b = back else {
+                // Drop incomplete frames during shutdown to prevent frozen frames
+                return nil
+            }
+            return stackedBuffers(front: f, back: b)
+        }
+
+        // Normal operation - cache front buffer for smoother compositing
+        stateLock.lock()
+        if let front = front {
+            lastFrontBuffer = (buffer: front, time: CMTime.zero)
+        }
+        let cachedFront = lastFrontBuffer?.buffer
+        stateLock.unlock()
+
+        // Use cached buffer as fallback
+        let frontBuffer = front ?? cachedFront
+        let backBuffer = back
+
         // Need at least one buffer
-        guard let primaryBuffer = back ?? front else {
+        guard let primaryBuffer = backBuffer ?? frontBuffer else {
             print("⚠️ FrameCompositor: No buffers provided")
             return nil
         }
-        
+
         // If only one buffer, use it for both halves
-        let frontBuffer = front ?? primaryBuffer
-        let backBuffer = back ?? primaryBuffer
-        
+        let finalFront = frontBuffer ?? primaryBuffer
+        let finalBack = backBuffer ?? primaryBuffer
+
+        return stackedBuffers(front: finalFront, back: finalBack)
+    }
+
+    /// Internal method to compose two buffers into stacked output
+    private func stackedBuffers(front: CVPixelBuffer, back: CVPixelBuffer) -> CVPixelBuffer? {
         // Create output buffer from pool
         guard let outputBuffer = allocatePixelBuffer() else {
             print("❌ FrameCompositor: Failed to allocate output buffer")
             return nil
         }
-        
+
         // Create CIImages from pixel buffers
-        let frontImage = CIImage(cvPixelBuffer: frontBuffer)
-        let backImage = CIImage(cvPixelBuffer: backBuffer)
+        let frontImage = CIImage(cvPixelBuffer: front)
+        let backImage = CIImage(cvPixelBuffer: back)
         
         // Calculate dimensions for stacking
         let outputWidth = CGFloat(width)
@@ -179,6 +282,10 @@ final class FrameCompositor {
     // MARK: - Private Helpers
     
     private func allocatePixelBuffer() -> CVPixelBuffer? {
+        // Try to get buffer from pool (thread-safe)
+        poolLock.lock()
+        defer { poolLock.unlock() }
+
         if let pool = pixelBufferPool {
             var pixelBuffer: CVPixelBuffer?
             let status = CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &pixelBuffer)

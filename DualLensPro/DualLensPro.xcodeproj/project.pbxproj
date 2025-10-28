@@ -21,7 +21,7 @@
 		69946CC0A9684DDE82E3760FD11998E2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D130B1CC4A4D407EA134161D6C50EDBA /* SettingsView.swift */; };
 		714C046E82B8DC623CFD84D1 /* PremiumUpgradeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92C316F8CDAFCFA96B2BF88D /* PremiumUpgradeView.swift */; };
 		715F45837CD34CBAB78C6B7703AFC8E5 /* DualCameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 116DC056E3414CA280B0BB4561269946 /* DualCameraManager.swift */; };
-521E91ABDDC146B2890FFDDA /* FrameCompositor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522F3E26022945D7AF014542 /* FrameCompositor.swift */; };
+
 		780C7E4EDB564945AFE9120D35E858FF /* DualLensProApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6204DFF1975846BEA2F90766027AEAB3 /* DualLensProApp.swift */; };
 		7C56031A8A0B487CBA8D21A6023445A0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 92FBAED9CF9D4A368447E4566D7F9264 /* Assets.xcassets */; };
 		83804F8EAFABC7D7FAA2500C /* PremiumUpgradeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6FC3C369C7DB6CC8202A073 /* PremiumUpgradeButton.swift */; };
@@ -54,7 +54,7 @@
 		07E300F6722F4BA69CAD6116942BF12B /* DualLensPro.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DualLensPro.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0EF5117031F00E19068C400A /* RecordingCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RecordingCoordinator.swift; path = Actors/RecordingCoordinator.swift; sourceTree = "<group>"; };
 		116DC056E3414CA280B0BB4561269946 /* DualCameraManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualCameraManager.swift; sourceTree = "<group>"; };
-522F3E26022945D7AF014542 /* FrameCompositor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameCompositor.swift; sourceTree = "<group>"; };
+
 		40AAFA5B7339E6421FC257FE /* PhotoLibraryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryService.swift; sourceTree = "<group>"; };
 		429106A385EF4F8688801E40B26F675C /* CameraViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewModel.swift; sourceTree = "<group>"; };
 		45D31302588846D887C954AC90343832 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -138,8 +138,7 @@
 			isa = PBXGroup;
 			children = (
 				AAE3195426EE02C3EB708C03 /* FrameCompositor.swift */,
-			
-				522F3E26022945D7AF014542 /* FrameCompositor.swift */,);
+			);
 			name = Utilities;
 			sourceTree = "<group>";
 		};
@@ -355,7 +354,7 @@
 				9EF8E50241D10B30AE9CA57E /* RecordingCoordinator.swift in Sources */,
 				8636A9C7F9200CD9AD261847 /* FrameCompositor.swift in Sources */,
 			
-				521E91ABDDC146B2890FFDDA /* FrameCompositor.swift in Sources */,);
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */

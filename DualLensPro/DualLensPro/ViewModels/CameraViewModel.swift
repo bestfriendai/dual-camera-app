@@ -14,8 +14,8 @@ import Photos
 class CameraViewModel: ObservableObject {
     @Published var isAuthorized = false
     @Published var isCameraReady = false // New flag to track if camera is fully initialized
-    @Published var cameraManager = DualCameraManager()
-    @Published var configuration = CameraConfiguration()
+    var cameraManager = DualCameraManager() // Removed @Published - updates are handled via Combine subscriptions
+    var configuration = CameraConfiguration() // Removed @Published - internal state only
     @Published var showError = false
     @Published var errorMessage: String = ""
 
@@ -27,9 +27,11 @@ class CameraViewModel: ObservableObject {
     @Published var showSaveSuccessToast = false
     @Published var saveSuccessMessage = ""
 
-    // Managers & Services
-    @Published var subscriptionManager = SubscriptionManager()
-    @Published var photoLibraryService = PhotoLibraryService()
+    // Managers & Services (removed @Published - these don't need UI updates)
+    var subscriptionManager = SubscriptionManager()
+    var photoLibraryService = PhotoLibraryService()
+    // TODO: Add DeviceMonitorService.swift to Xcode project and uncomment
+    // private let deviceMonitor = DeviceMonitorService.shared
     // TODO: Add AnalyticsService to Xcode project and uncomment
     // private let analytics = AnalyticsService.shared
     lazy var settingsViewModel: SettingsViewModel = {
@@ -51,6 +53,9 @@ class CameraViewModel: ObservableObject {
     @Published var showAdvancedControls = false
     @Published var selectedZoomPreset: CGFloat = 1.0
     @Published var showModeSelector = false
+
+    // Camera switching state (mirrored from cameraManager for SwiftUI updates)
+    @Published var isCamerasSwitched = false
 
     // Recording state passthrough
     var isRecording: Bool {
@@ -99,20 +104,26 @@ class CameraViewModel: ObservableObject {
         print("🔐 Init - currentCaptureMode: \(currentCaptureMode), isPhotoMode: \(currentCaptureMode.isPhotoMode), isRecordingMode: \(currentCaptureMode.isRecordingMode)")
 
         // Bridge manager errors to VM so UI can display them
+        // ✅ FIX Issue #3: Use DispatchQueue.main instead of RunLoop.main for proper MainActor isolation
         cameraManager.$errorMessage
             .compactMap { $0 }
-            .receive(on: RunLoop.main)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] message in
-                self?.setError(message)
+                Task { @MainActor in
+                    self?.setError(message)
+                }
             }
             .store(in: &cancellables)
 
         // ✅ CRITICAL: Observe recordingState changes to update UI
+        // ✅ FIX Issue #3: Use DispatchQueue.main instead of RunLoop.main for proper MainActor isolation
         cameraManager.$recordingState
-            .receive(on: RunLoop.main)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] newState in
                 print("🎬 Recording state changed to: \(newState) (isRecording: \(newState.isRecording))")
-                self?.objectWillChange.send()
+                Task { @MainActor in
+                    self?.objectWillChange.send()
+                }
             }
             .store(in: &cancellables)
 
@@ -122,12 +133,20 @@ class CameraViewModel: ObservableObject {
         cameraManager.setCaptureMode(.video)
         print("✅ Manually synchronized capture mode to VIDEO")
 
+        // Start device monitoring
+        // TODO: Uncomment after adding DeviceMonitorService.swift to Xcode project
+        // deviceMonitor.startMonitoring()
+        // deviceMonitor.delegate = cameraManager
+        // print("✅ Device monitoring started")
+
         // NOTE: Do NOT call setupRecordingMonitor() here - it will be called after camera setup
         // Calling async operations in init can cause crashes
     }
 
     deinit {
         recordingMonitorTask?.cancel()
+        // TODO: Uncomment after adding DeviceMonitorService.swift to Xcode project
+        // deviceMonitor.stopMonitoring()
     }
 
     // MARK: - Authorization
@@ -198,7 +217,7 @@ class CameraViewModel: ObservableObject {
             return
         }
 
-        let setupStartTime = Date().timeIntervalSince1970
+        let _ = Date()  // Track setup start time.timeIntervalSince1970
         isSettingUpCamera = true
         defer { isSettingUpCamera = false }
 
@@ -283,14 +302,8 @@ class CameraViewModel: ObservableObject {
         HapticManager.shared.modeChange()
 
         // Check if mode requires premium
-        if currentCaptureMode.requiresPremium && !isPremium {
-            print("⚠️ Mode \(currentCaptureMode.rawValue) requires premium - reverting to video")
-            HapticManager.shared.premiumLocked()
-            showPremiumUpgrade = true
-            // Revert to previous mode
-            currentCaptureMode = .video
-            return
-        }
+        // Premium gating disabled for all modes
+
 
         // Update configuration
         configuration.setCaptureMode(currentCaptureMode)
@@ -311,11 +324,19 @@ class CameraViewModel: ObservableObject {
                 setTimer(10)
             }
         case .action:
-            // Ensure high quality for action mode
+            // ✅ FIX: Action mode is a recording mode, ensure high quality
             setRecordingQuality(.high)
+            print("🎬 Action mode enabled - 120fps high-speed recording ready")
         case .switchScreen:
-            // Trigger camera switch animation
+            // ✅ FIX: Switch Screen mode swaps camera positions
             switchCameras()
+            print("🔄 Switch Screen mode - camera positions swapped")
+            // After swapping, return to previous mode (video or photo)
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second delay
+                // Return to video mode after switching
+                self.currentCaptureMode = .video
+            }
         default:
             break
         }
@@ -396,28 +417,25 @@ class CameraViewModel: ObservableObject {
             print("✅ Photos permission granted")
         }
 
-        // ✅ CRITICAL FIX: Check available storage space
-        if let availableSpace = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory())[.systemFreeSize] as? Int64 {
-            let availableGB = Double(availableSpace) / 1_073_741_824 // Convert to GB
-            print("💾 Available storage: \(String(format: "%.2f", availableGB)) GB")
+        // ✅ FIX Issue #19: Check available storage space with dynamic calculation
+        try checkStorageSpace()
 
-            // Require at least 500 MB free space (conservative estimate for 3-minute dual camera recording)
-            let requiredBytes: Int64 = 500_000_000 // 500 MB
-            guard availableSpace > requiredBytes else {
-                print("❌ Insufficient storage - need at least 500 MB")
-                HapticManager.shared.error()
-                throw CameraRecordingError.insufficientStorage
-            }
+        // ✅ FIX Issue #4.6-4.8: Check device monitoring conditions
+        // TODO: Uncomment after adding DeviceMonitorService.swift to Xcode project
+        /*
+        let deviceCheck = deviceMonitor.canStartRecording()
+        guard deviceCheck.allowed else {
+            print("❌ Cannot record - device conditions not met")
+            HapticManager.shared.error()
+            let errorMsg = deviceCheck.reasons.joined(separator: "\n")
+            throw CameraRecordingError.deviceConditionsNotMet(errorMsg)
         }
+        print("✅ Device conditions check passed")
+        */
 
         // Check if user can record (premium check)
-        guard canRecord else {
-            print("❌ Cannot record - premium check failed")
-            HapticManager.shared.premiumLocked()
-            showPremiumUpgrade = true
-            throw CameraRecordingError.recordingLimitReached
-        }
-        print("✅ Can record - premium check passed")
+        // Premium gating disabled - allow recording without limits
+        print("✅ Premium gating disabled - allowing recording")
 
         // Check that we're in a recording mode
         guard currentCaptureMode.isRecordingMode else {
@@ -447,6 +465,9 @@ class CameraViewModel: ObservableObject {
     }
 
     private func stopRecording() async throws {
+        // ✅ FIX Issue #4: Cancel recording monitor task when stopping recording
+        recordingMonitorTask?.cancel()
+
         // Trigger haptic feedback
         HapticManager.shared.recordingStop()
 
@@ -643,9 +664,18 @@ class CameraViewModel: ObservableObject {
     // MARK: - Camera Control
     func switchCameras() {
         cameraManager.switchCameras()
+        // ✅ FIX: Update local @Published property to trigger SwiftUI re-render
+        isCamerasSwitched = cameraManager.isCamerasSwitched
     }
 
     func toggleControlsVisibility() {
+        // ✅ FIX: Don't hide controls if advanced menu or mode selector is open
+        // This prevents accidentally closing menus when tapping on them
+        guard !showAdvancedControls && !showModeSelector else {
+            print("⚠️ Advanced controls or mode selector is open - ignoring tap")
+            return
+        }
+
         withAnimation(.spring(response: 0.3)) {
             controlsVisible.toggle()
         }
@@ -685,41 +715,19 @@ class CameraViewModel: ObservableObject {
         // Store the task so we can cancel it if needed
         recordingMonitorTask = Task { [weak self] in
             guard let self = self else { return }
-            var hasShownWarning = false
-
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+                // ✅ FIX Issue #2: Debounce to 0.5s instead of 0.1s to reduce UI updates
+                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+
+                // ✅ FIX Issue #4: Check cancellation after sleep
+                guard !Task.isCancelled else { break }
 
                 if self.isRecording {
                     self.subscriptionManager.updateRecordingDuration(self.recordingDuration)
-
-                    // Show warning haptic at 2:30 for free users
-                    if self.subscriptionManager.showTimeWarning && !hasShownWarning {
-                        HapticManager.shared.timeLimitWarning()
-                        hasShownWarning = true
-                    }
-
-                    // Auto-stop recording when limit reached for free users
-                    if self.subscriptionManager.recordingLimitReached && !self.isPremium {
-                        HapticManager.shared.timeLimitReached()
-                        try? await self.stopRecording()
-                        await MainActor.run {
-                            self.showPremiumUpgrade = true
-                        }
-                        hasShownWarning = false
-                    }
-                } else {
-                    // Reset warning flag when not recording
-                    hasShownWarning = false
-                }
-
-                // Check if we need to show the upgrade prompt
-                if self.subscriptionManager.showUpgradePrompt {
-                    await MainActor.run {
-                        self.showPremiumUpgrade = true
-                    }
+                    // Premium gating disabled: no time warning or auto-stop
                 }
             }
+            // Premium gating disabled: never show upgrade prompt
         }
     }
 
@@ -738,6 +746,70 @@ class CameraViewModel: ObservableObject {
         showGallery = true
     }
 
+    // MARK: - Storage Management (Issue #19)
+    private func checkStorageSpace() throws {
+        let tempDir = FileManager.default.temporaryDirectory.path
+
+        guard let attributes = try? FileManager.default.attributesOfFileSystem(forPath: tempDir),
+              let availableSpace = attributes[.systemFreeSize] as? Int64 else {
+            print("⚠️ Cannot check storage space")
+            return  // Don't block recording if we can't check
+        }
+
+        // Calculate required space based on recording settings
+        let requiredBytes = calculateRequiredSpace(
+            quality: cameraManager.recordingQuality,
+            mode: currentCaptureMode,
+            isPremium: subscriptionManager.isPremium
+        )
+
+        let availableMB = Double(availableSpace) / 1_000_000
+        let requiredMB = Double(requiredBytes) / 1_000_000
+
+        guard availableSpace > requiredBytes else {
+            let message = String(format: "Insufficient storage. Need %.0fMB, have %.0fMB available",
+                               requiredMB, availableMB)
+            print("❌ \(message)")
+            HapticManager.shared.error()
+            throw CameraRecordingError.insufficientStorage
+        }
+
+        print("✅ Storage check passed: \(String(format: "%.0fMB", availableMB)) available, \(String(format: "%.0fMB", requiredMB)) required")
+    }
+
+    private func calculateRequiredSpace(
+        quality: RecordingQuality,
+        mode: CaptureMode,
+        isPremium: Bool
+    ) -> Int64 {
+        // Estimate bitrate based on quality and mode
+        let bitrate: Double = {
+            switch (quality, mode) {
+            case (.ultra, .action):
+                return 100_000_000  // 100 Mbps for 4K 120fps
+            case (.ultra, _):
+                return 50_000_000   // 50 Mbps for 4K 60fps
+            case (.high, _):
+                return 25_000_000   // 25 Mbps for 1080p
+            case (.medium, _):
+                return 10_000_000   // 10 Mbps for 720p
+            case (.low, _):
+                return 5_000_000    // 5 Mbps for 720p low
+            }
+        }()
+
+        // Estimate recording duration
+        let maxDurationSeconds: Double = isPremium ? 600 : 30  // 10min vs 30s
+
+        // Calculate size with 20% safety margin
+        let estimatedBytes = (bitrate / 8) * maxDurationSeconds * 1.2
+
+        // Triple for 3 simultaneous outputs (front, back, combined)
+        let totalBytes = Int64(estimatedBytes * 3)
+
+        return max(totalBytes, 500_000_000)  // Minimum 500MB
+    }
+
     // MARK: - Error Handling
     private func setError(_ message: String) {
         errorMessage = message
@@ -751,6 +823,7 @@ enum CameraRecordingError: LocalizedError {
     case invalidModeForRecording
     case photosNotAuthorized
     case insufficientStorage
+    case deviceConditionsNotMet(String)
 
     var errorDescription: String? {
         switch self {
@@ -762,6 +835,8 @@ enum CameraRecordingError: LocalizedError {
             return "Photos access is required to save videos. Please grant permission in Settings."
         case .insufficientStorage:
             return "Not enough storage space. Please free up at least 500 MB to record."
+        case .deviceConditionsNotMet(let message):
+            return message
         }
     }
 }

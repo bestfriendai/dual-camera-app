@@ -39,17 +39,19 @@ class PhotoLibraryService: ObservableObject {
     }
 
     // MARK: - Fetch Latest Asset
+    // Issue #21 Fix: Removed recursive call
     func fetchLatestAsset() async {
-        guard isAuthorized else {
+        // Ensure authorization first (no recursion)
+        if !isAuthorized {
             let granted = await requestAuthorization()
             guard granted else {
                 errorMessage = "Photo library access not granted"
                 return
             }
-            // Authorization granted, continue with fetch
-            return await fetchLatestAsset()
+            // isAuthorized is now true, continue below
         }
 
+        // Fetch logic (now guaranteed authorized)
         let fetchOptions = PHFetchOptions()
         fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         fetchOptions.fetchLimit = 1
@@ -70,14 +72,15 @@ class PhotoLibraryService: ObservableObject {
     }
 
     // MARK: - Fetch Thumbnail
+    // Issue #20 Fix: Fixed race condition with proper continuation resumption
     func fetchThumbnail(for asset: PHAsset) async {
         let manager = PHImageManager.default()
         let options = PHImageRequestOptions()
-        options.deliveryMode = .highQualityFormat
+        options.deliveryMode = .opportunistic
         options.isSynchronous = false
         options.isNetworkAccessAllowed = true
 
-        let targetSize = CGSize(width: 100, height: 100)
+        let targetSize = CGSize(width: 300, height: 300)
 
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             manager.requestImage(
@@ -85,10 +88,16 @@ class PhotoLibraryService: ObservableObject {
                 targetSize: targetSize,
                 contentMode: .aspectFill,
                 options: options
-            ) { [weak self] image, _ in
-                Task { @MainActor in
-                    self?.latestThumbnail = image
+            ) { [weak self] image, info in
+                guard let self = self else {
                     continuation.resume()
+                    return
+                }
+
+                // Move to main actor and THEN resume
+                Task { @MainActor in
+                    defer { continuation.resume() }  // Guarantee resume happens
+                    self.latestThumbnail = image
                 }
             }
         }

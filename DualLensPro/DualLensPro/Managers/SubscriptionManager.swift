@@ -12,7 +12,7 @@ import Combine
 @MainActor
 class SubscriptionManager: ObservableObject {
     // MARK: - Published Properties
-    @Published var subscriptionTier: SubscriptionTier = .free
+    @Published var subscriptionTier: SubscriptionTier = .premium
     @Published var isLoading = false
     @Published var showUpgradePrompt = false
     @Published var errorMessage: String?
@@ -93,13 +93,10 @@ class SubscriptionManager: ObservableObject {
 
     // MARK: - Subscription Management
     func loadSubscriptionStatus() {
-        // Load from UserDefaults (in production, verify with StoreKit)
-        if let tierString = UserDefaults.standard.string(forKey: subscriptionTierKey),
-           let tier = SubscriptionTier(rawValue: tierString) {
-            subscriptionTier = tier
-        } else {
-            subscriptionTier = .free
-        }
+        // Pro disabled: always premium
+        subscriptionTier = .premium
+        showUpgradePrompt = false
+        saveSubscriptionStatus()
     }
 
     func saveSubscriptionStatus() {

@@ -133,29 +133,50 @@ struct DualCameraView: View {
                             .foregroundStyle(.white.opacity(0.8))
                     }
                 } else if viewModel.cameraManager.isMultiCamSupported {
-                    // Dual camera mode
+                    // ✅ FIX: Dual camera mode with dynamic camera position switching
+                    // Check isCamerasSwitched to determine which camera goes on top
                     VStack(spacing: 0) {
-                        // Back Camera (Top)
+                        // Top Camera (switches based on isCamerasSwitched)
                         ZStack {
-                            CameraPreviewView(
-                                previewLayer: viewModel.cameraManager.backPreviewLayer,
-                                position: .back,
-                                onZoomChange: { factor in
-                                    viewModel.updateBackZoom(factor)
-                                },
-                                currentZoom: viewModel.configuration.backZoomFactor
-                            )
+                            if viewModel.isCamerasSwitched {
+                                // Front camera on top when switched
+                                CameraPreviewView(
+                                    previewLayer: viewModel.cameraManager.frontPreviewLayer,
+                                    position: .front,
+                                    onZoomChange: { factor in
+                                        viewModel.updateFrontZoom(factor)
+                                    },
+                                    currentZoom: viewModel.configuration.frontZoomFactor,
+                                    minZoom: viewModel.configuration.frontMinZoom,
+                                    maxZoom: viewModel.configuration.frontMaxZoom
+                                )
+                            } else {
+                                // Back camera on top by default
+                                CameraPreviewView(
+                                    previewLayer: viewModel.cameraManager.backPreviewLayer,
+                                    position: .back,
+                                    onZoomChange: { factor in
+                                        viewModel.updateBackZoom(factor)
+                                    },
+                                    currentZoom: viewModel.configuration.backZoomFactor,
+                                    minZoom: viewModel.configuration.backMinZoom,
+                                    maxZoom: viewModel.configuration.backMaxZoom
+                                )
+                            }
 
-                            // Grid overlay for back camera
+                            // Grid overlay
                             if viewModel.showGrid {
                                 GridOverlay()
                             }
                         }
                         .frame(height: geometry.size.height * 0.5)
                         .overlay(alignment: .topLeading) {
-                            CameraLabel(text: "Back", zoom: viewModel.configuration.backZoomFactor)
-                                .padding(.top, max(geometry.safeAreaInsets.top + 70, 80))
-                                .padding(.leading, 20)
+                            CameraLabel(
+                                text: viewModel.isCamerasSwitched ? "Front" : "Back",
+                                zoom: viewModel.isCamerasSwitched ? viewModel.configuration.frontZoomFactor : viewModel.configuration.backZoomFactor
+                            )
+                            .padding(.top, max(geometry.safeAreaInsets.top + 70, 80))
+                            .padding(.leading, 20)
                         }
                         .overlay(alignment: .topTrailing) {
                             if viewModel.isRecording {
@@ -170,27 +191,47 @@ struct DualCameraView: View {
                             .fill(.white.opacity(0.3))
                             .frame(height: 2)
 
-                        // Front Camera (Bottom)
+                        // Bottom Camera (switches based on isCamerasSwitched)
                         ZStack {
-                            CameraPreviewView(
-                                previewLayer: viewModel.cameraManager.frontPreviewLayer,
-                                position: .front,
-                                onZoomChange: { factor in
-                                    viewModel.updateFrontZoom(factor)
-                                },
-                                currentZoom: viewModel.configuration.frontZoomFactor
-                            )
+                            if viewModel.isCamerasSwitched {
+                                // Back camera on bottom when switched
+                                CameraPreviewView(
+                                    previewLayer: viewModel.cameraManager.backPreviewLayer,
+                                    position: .back,
+                                    onZoomChange: { factor in
+                                        viewModel.updateBackZoom(factor)
+                                    },
+                                    currentZoom: viewModel.configuration.backZoomFactor,
+                                    minZoom: viewModel.configuration.backMinZoom,
+                                    maxZoom: viewModel.configuration.backMaxZoom
+                                )
+                            } else {
+                                // Front camera on bottom by default
+                                CameraPreviewView(
+                                    previewLayer: viewModel.cameraManager.frontPreviewLayer,
+                                    position: .front,
+                                    onZoomChange: { factor in
+                                        viewModel.updateFrontZoom(factor)
+                                    },
+                                    currentZoom: viewModel.configuration.frontZoomFactor,
+                                    minZoom: viewModel.configuration.frontMinZoom,
+                                    maxZoom: viewModel.configuration.frontMaxZoom
+                                )
+                            }
 
-                            // Grid overlay for front camera
+                            // Grid overlay
                             if viewModel.showGrid {
                                 GridOverlay()
                             }
                         }
                         .frame(height: geometry.size.height * 0.5)
                         .overlay(alignment: .bottomLeading) {
-                            CameraLabel(text: "Front", zoom: viewModel.configuration.frontZoomFactor)
-                                .padding(.bottom, 24)
-                                .padding(.leading, 20)
+                            CameraLabel(
+                                text: viewModel.isCamerasSwitched ? "Back" : "Front",
+                                zoom: viewModel.cameraManager.isCamerasSwitched ? viewModel.configuration.backZoomFactor : viewModel.configuration.frontZoomFactor
+                            )
+                            .padding(.bottom, 24)
+                            .padding(.leading, 20)
                         }
                     }
                 } else {
@@ -202,7 +243,9 @@ struct DualCameraView: View {
                             onZoomChange: { factor in
                                 viewModel.updateBackZoom(factor)
                             },
-                            currentZoom: viewModel.configuration.backZoomFactor
+                            currentZoom: viewModel.configuration.backZoomFactor,
+                            minZoom: viewModel.configuration.backMinZoom,  // ✅ ZOOM FIX
+                            maxZoom: viewModel.configuration.backMaxZoom
                         )
 
                         // Grid overlay
@@ -334,10 +377,7 @@ struct DualCameraView: View {
             .sheet(isPresented: $viewModel.showSettings) {
                 SettingsView(viewModel: viewModel)
             }
-            .sheet(isPresented: $viewModel.showPremiumUpgrade) {
-                PremiumUpgradeView()
-                    .environmentObject(viewModel)
-            }
+
         }
         .ignoresSafeArea()
     }

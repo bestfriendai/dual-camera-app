@@ -39,9 +39,13 @@ struct CameraConfiguration: Sendable {
     var exposureMode: ExposureMode = .auto
     var focusMode: FocusMode = .continuousAutoFocus
 
-    // MARK: - Zoom ranges
-    let minZoom: CGFloat = 0.5
-    let maxZoom: CGFloat = 10.0
+    // ✅ FIX Issue #17: Query actual device zoom ranges instead of hardcoding
+    var minZoom: CGFloat = 1.0
+    var maxZoom: CGFloat = 5.0
+    var frontMinZoom: CGFloat = 1.0
+    var frontMaxZoom: CGFloat = 5.0
+    var backMinZoom: CGFloat = 1.0
+    var backMaxZoom: CGFloat = 5.0
 
     // MARK: - Zoom Presets
     var availableZoomLevels: [CGFloat] {
@@ -65,12 +69,34 @@ struct CameraConfiguration: Sendable {
     }
 
     // MARK: - Zoom Control
+    // ✅ FIX Issue #17: Update zoom ranges from actual device capabilities
+    mutating func updateZoomRanges(
+        frontCamera: AVCaptureDevice?,
+        backCamera: AVCaptureDevice?
+    ) {
+        if let front = frontCamera {
+            frontMinZoom = front.minAvailableVideoZoomFactor
+            frontMaxZoom = min(front.maxAvailableVideoZoomFactor, 10.0)  // Cap at 10x for UI
+            print("📸 Front camera zoom range: \(frontMinZoom)x - \(frontMaxZoom)x")
+        }
+
+        if let back = backCamera {
+            backMinZoom = back.minAvailableVideoZoomFactor
+            backMaxZoom = min(back.maxAvailableVideoZoomFactor, 10.0)  // Cap at 10x for UI
+            print("📸 Back camera zoom range: \(backMinZoom)x - \(backMaxZoom)x")
+        }
+
+        // Set overall ranges
+        minZoom = min(frontMinZoom, backMinZoom)
+        maxZoom = max(frontMaxZoom, backMaxZoom)
+    }
+
     mutating func updateFrontZoom(_ factor: CGFloat) {
-        frontZoomFactor = min(max(factor, minZoom), maxZoom)
+        frontZoomFactor = min(max(factor, frontMinZoom), frontMaxZoom)
     }
 
     mutating func updateBackZoom(_ factor: CGFloat) {
-        backZoomFactor = min(max(factor, minZoom), maxZoom)
+        backZoomFactor = min(max(factor, backMinZoom), backMaxZoom)
     }
 
     mutating func setZoomToPreset(_ preset: CGFloat) {

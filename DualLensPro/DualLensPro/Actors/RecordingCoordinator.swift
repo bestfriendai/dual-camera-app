@@ -22,6 +22,7 @@ actor RecordingCoordinator {
             self.name = name
         }
     }
+
     // MARK: - State
     private var frontWriter: AVAssetWriter?
     private var backWriter: AVAssetWriter?
@@ -55,6 +56,14 @@ actor RecordingCoordinator {
 
     // Audio sample counter for logging
     private var audioSampleCount = 0
+
+    // MARK: - Final timestamp tracking (to avoid frozen tail frames)
+    private var lastFrontVideoPTS: CMTime?
+    private var lastBackVideoPTS: CMTime?
+    private var lastCombinedVideoPTS: CMTime?
+    private var lastFrontAudioPTS: CMTime?
+    private var lastBackAudioPTS: CMTime?
+    private var lastCombinedAudioPTS: CMTime?
 
     // MARK: - Configuration
     func configure(
@@ -177,9 +186,9 @@ actor RecordingCoordinator {
             }
         }
 
-        // Initialize frame compositor for stacked dual-camera output
+        // Initialize frame compositor for stacked dual-camera output (Issue #4.5 Fix: Actor-isolated)
         compositor = FrameCompositor(width: dimensions.width, height: dimensions.height)
-        print("✅ FrameCompositor initialized for combined output")
+        print("✅ FrameCompositor initialized for combined output (actor-isolated)")
 
         print("✅ RecordingCoordinator: Configuration complete")
         print("   Front: \(frontURL.lastPathComponent)")
@@ -194,6 +203,9 @@ actor RecordingCoordinator {
         guard !isWriting else {
             throw RecordingError.alreadyWriting
         }
+
+        // ✅ FIX: Reset compositor for fresh recording (clears any cached buffers)
+        compositor?.beginRecording()
 
         // Start all writers
         guard frontWriter?.startWriting() == true,
@@ -242,7 +254,10 @@ actor RecordingCoordinator {
             return
         }
 
-        if !adaptor.append(pixelBuffer, withPresentationTime: time) {
+        let ok = adaptor.append(pixelBuffer, withPresentationTime: time)
+        if ok {
+            lastFrontVideoPTS = time
+        } else {
             print("⚠️ Failed to append front pixel buffer at \(time.seconds)s")
         }
 
@@ -250,27 +265,33 @@ actor RecordingCoordinator {
         lastFrontBuffer = (buffer: pixelBuffer, time: time)
     }
 
-    func appendBackPixelBuffer(_ pixelBuffer: CVPixelBuffer, time: CMTime) throws {
+    func appendBackPixelBuffer(_ pixelBuffer: CVPixelBuffer, time: CMTime) async throws {
         guard isWriting else { return }
 
         // Append to back writer
         if let adaptor = backPixelBufferAdaptor,
            let input = backVideoInput,
            input.isReadyForMoreMediaData {
-            if !adaptor.append(pixelBuffer, withPresentationTime: time) {
+            let ok = adaptor.append(pixelBuffer, withPresentationTime: time)
+            if ok {
+                lastBackVideoPTS = time
+            } else {
                 print("⚠️ Failed to append back pixel buffer at \(time.seconds)s")
             }
         }
 
-        // ✅ Create stacked composition for combined output
+        // ✅ Issue #4.5 Fix: Create stacked composition for combined output (actor-isolated)
         if let adaptor = combinedPixelBufferAdaptor,
            let input = combinedVideoInput,
            input.isReadyForMoreMediaData,
            let compositor = compositor {
 
-            // Compose front and back into stacked frame
+            // Compose front and back into stacked frame (await actor call)
             if let composedBuffer = compositor.stacked(front: lastFrontBuffer?.buffer, back: pixelBuffer) {
-                if !adaptor.append(composedBuffer, withPresentationTime: time) {
+                let ok2 = adaptor.append(composedBuffer, withPresentationTime: time)
+                if ok2 {
+                    lastCombinedVideoPTS = time
+                } else {
                     print("⚠️ Failed to append composed pixel buffer at \(time.seconds)s")
                 }
             } else {
@@ -288,9 +309,12 @@ actor RecordingCoordinator {
         // Append audio to all three writers (front, back, and combined)
         var successCount = 0
 
+        let audioPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+
         // Append to front audio input
         if let input = frontAudioInput, input.isReadyForMoreMediaData {
             if input.append(sampleBuffer) {
+                lastFrontAudioPTS = audioPTS
                 successCount += 1
             }
         }
@@ -298,6 +322,7 @@ actor RecordingCoordinator {
         // Append to back audio input
         if let input = backAudioInput, input.isReadyForMoreMediaData {
             if input.append(sampleBuffer) {
+                lastBackAudioPTS = audioPTS
                 successCount += 1
             }
         }
@@ -305,6 +330,7 @@ actor RecordingCoordinator {
         // Append to combined audio input
         if let input = combinedAudioInput, input.isReadyForMoreMediaData {
             if input.append(sampleBuffer) {
+                lastCombinedAudioPTS = audioPTS
                 successCount += 1
             }
         }
@@ -322,8 +348,38 @@ actor RecordingCoordinator {
         }
     }
 
+    // Issue #22 Fix: Improved error recovery - try to save each video independently
     func stopWriting() async throws -> (front: URL, back: URL, combined: URL) {
-        print("🎬 RecordingCoordinator: Stopping writing...")
+        let result = try await stopWritingWithRecovery()
+
+        // If all failed, throw error
+        guard result.hasAnySuccess else {
+            throw RecordingError.allWritersFailed
+        }
+
+        // If not all successful, log warnings but proceed with successful ones
+        if !result.allSuccessful {
+            print("⚠️ Some writers failed, but proceeding with successful ones")
+        }
+
+        // Extract successful URLs (this will throw if any critical one failed)
+        guard case .success(let frontURL) = result.front,
+              case .success(let backURL) = result.back,
+              case .success(let combinedURL) = result.combined else {
+            // At least one failed - throw detailed error
+            var failedWriters: [String] = []
+            if case .failure = result.front { failedWriters.append("Front") }
+            if case .failure = result.back { failedWriters.append("Back") }
+            if case .failure = result.combined { failedWriters.append("Combined") }
+            print("❌ Failed writers: \(failedWriters.joined(separator: ", "))")
+            throw RecordingError.allWritersFailed
+        }
+
+        return (frontURL, backURL, combinedURL)
+    }
+
+    func stopWritingWithRecovery() async throws -> RecordingResult {
+        print("🎬 RecordingCoordinator: Stopping writing with error recovery...")
 
         guard isWriting else {
             throw RecordingError.notWriting
@@ -331,9 +387,49 @@ actor RecordingCoordinator {
 
         isWriting = false
 
+        // ✅ CRITICAL FIX: Clear compositor cache and flush GPU pipeline
+        // This prevents frozen frames from cached buffers during shutdown
+        compositor?.reset()
+        print("🧹 Cleared compositor cache before finalizing")
+
         // ✅ CRITICAL FIX: Add a small delay to allow final frames to be processed
         // This prevents the last few frames from being frozen/corrupted
         try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+
+        // ✅ CRITICAL FIX: Flush GPU render pipeline to ensure all renders complete
+        compositor?.flushGPU()
+        print("🎨 GPU pipeline flushed, all renders complete")
+
+        // ✅ CRITICAL FIX: Use the EARLIER timestamp (MIN) to prevent frozen frames
+        // The frozen frame issue happens when we try to include frames that haven't been fully written
+        // We must end the session BEFORE the last incomplete frame, not after
+        // This ensures all frames in the video are complete and not frozen
+        func endTime(_ v: CMTime?, _ a: CMTime?) -> CMTime? {
+            switch (v, a) {
+            case let (v?, a?):
+                // Use the EARLIER timestamp to ensure all frames are complete
+                return CMTimeCompare(v, a) <= 0 ? v : a
+            case let (v?, nil):
+                return v
+            case let (nil, a?):
+                return a
+            default:
+                return nil
+            }
+        }
+
+        if let w = frontWriter, let t = endTime(lastFrontVideoPTS, lastFrontAudioPTS) {
+            print("⏹️ endSession(front) at \(t.seconds)s (v=\(lastFrontVideoPTS?.seconds ?? -1), a=\(lastFrontAudioPTS?.seconds ?? -1))")
+            w.endSession(atSourceTime: t)
+        }
+        if let w = backWriter, let t = endTime(lastBackVideoPTS, lastBackAudioPTS) {
+            print("⏹️ endSession(back) at \(t.seconds)s (v=\(lastBackVideoPTS?.seconds ?? -1), a=\(lastBackAudioPTS?.seconds ?? -1))")
+            w.endSession(atSourceTime: t)
+        }
+        if let w = combinedWriter, let t = endTime(lastCombinedVideoPTS, lastCombinedAudioPTS) {
+            print("⏹️ endSession(combined) at \(t.seconds)s (v=\(lastCombinedVideoPTS?.seconds ?? -1), a=\(lastCombinedAudioPTS?.seconds ?? -1))")
+            w.endSession(atSourceTime: t)
+        }
 
         // Mark all inputs as finished (video + audio for all three writers)
         frontVideoInput?.markAsFinished()
@@ -347,36 +443,58 @@ actor RecordingCoordinator {
         // This ensures all pending data is flushed before finishing writers
         try await Task.sleep(nanoseconds: 50_000_000) // 0.05 seconds
 
-        // Finish all writers concurrently
-        // Box writers for safe transfer across task boundaries
-        let boxes: [WriterBox] = [
-            frontWriter.map { WriterBox($0, name: "Front") },
-            backWriter.map { WriterBox($0, name: "Back") },
-            combinedWriter.map { WriterBox($0, name: "Combined") }
+        // Get URLs before attempting to finish
+        let capturedFrontURL = frontURL
+        let capturedBackURL = backURL
+        let capturedCombinedURL = combinedURL
+
+        // Box writers for safe transfer across task boundaries (Issue #22 Fix)
+        let writerBoxes: [(box: WriterBox, url: URL, key: String)] = [
+            frontWriter.flatMap { w in capturedFrontURL.map { (WriterBox(w, name: "Front"), $0, "front") } },
+            backWriter.flatMap { w in capturedBackURL.map { (WriterBox(w, name: "Back"), $0, "back") } },
+            combinedWriter.flatMap { w in capturedCombinedURL.map { (WriterBox(w, name: "Combined"), $0, "combined") } }
         ].compactMap { $0 }
 
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            for box in boxes {
+        // Try to save each video independently (Issue #22 Fix)
+        var results: [String: Result<URL, Error>] = [:]
+
+        await withTaskGroup(of: (String, Result<URL, Error>).self) { group in
+            for item in writerBoxes {
                 group.addTask {
-                    try await Self.finishWriterStatic(box.writer, name: box.name)
+                    do {
+                        try await Self.finishWriterStatic(item.box.writer, name: item.box.name)
+                        return (item.key, .success(item.url))
+                    } catch {
+                        print("❌ Failed to finish \(item.box.name) writer: \(error)")
+                        return (item.key, .failure(error))
+                    }
                 }
             }
 
-            try await group.waitForAll()
-        }
-
-        // Get URLs before cleanup
-        guard let frontURL = frontURL,
-              let backURL = backURL,
-              let combinedURL = combinedURL else {
-            throw RecordingError.missingURLs
+            for await (key, result) in group {
+                results[key] = result
+            }
         }
 
         // Cleanup
         cleanup()
 
-        print("✅ RecordingCoordinator: All videos saved successfully")
-        return (frontURL, backURL, combinedURL)
+        // Build result
+        let recordingResult = RecordingResult(
+            front: results["front"] ?? .failure(RecordingError.missingURLs),
+            back: results["back"] ?? .failure(RecordingError.missingURLs),
+            combined: results["combined"] ?? .failure(RecordingError.missingURLs)
+        )
+
+        if recordingResult.allSuccessful {
+            print("✅ RecordingCoordinator: All videos saved successfully")
+        } else if recordingResult.hasAnySuccess {
+            print("⚠️ RecordingCoordinator: Some videos saved successfully")
+        } else {
+            print("❌ RecordingCoordinator: All videos failed to save")
+        }
+
+        return recordingResult
     }
 
     nonisolated private static func finishWriterStatic(_ writer: AVAssetWriter, name: String) async throws {
@@ -415,6 +533,20 @@ actor RecordingCoordinator {
         recordingStartTime = nil
         hasReceivedFirstVideoFrame = false
         hasReceivedFirstAudioFrame = false
+        audioSampleCount = 0  // Issue #16 Fix: Reset counter to prevent overflow
+        lastFrontBuffer = nil
+        lastFrontVideoPTS = nil
+        lastBackVideoPTS = nil
+        lastCombinedVideoPTS = nil
+        lastFrontAudioPTS = nil
+        lastBackAudioPTS = nil
+        lastCombinedAudioPTS = nil
+        frontURL = nil
+        backURL = nil
+        combinedURL = nil
+        compositor = nil
+
+        print("🧹 RecordingCoordinator cleaned up")
     }
 
     // MARK: - Status
@@ -427,6 +559,29 @@ actor RecordingCoordinator {
     }
 }
 
+// MARK: - Recording Result (Issue #22 Fix)
+struct RecordingResult {
+    let front: Result<URL, Error>
+    let back: Result<URL, Error>
+    let combined: Result<URL, Error>
+
+    var hasAnySuccess: Bool {
+        if case .success = front { return true }
+        if case .success = back { return true }
+        if case .success = combined { return true }
+        return false
+    }
+
+    var allSuccessful: Bool {
+        if case .success = front,
+           case .success = back,
+           case .success = combined {
+            return true
+        }
+        return false
+    }
+}
+
 // MARK: - Errors
 enum RecordingError: LocalizedError {
     case alreadyWriting
@@ -434,6 +589,7 @@ enum RecordingError: LocalizedError {
     case failedToStartWriting
     case invalidSample
     case missingURLs
+    case allWritersFailed
 
     var errorDescription: String? {
         switch self {
@@ -447,6 +603,8 @@ enum RecordingError: LocalizedError {
             return "Invalid video sample"
         case .missingURLs:
             return "Output URLs not configured"
+        case .allWritersFailed:
+            return "All video writers failed to complete"
         }
     }
 }

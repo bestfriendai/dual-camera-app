@@ -25,36 +25,38 @@ final class SubscriptionManagerTests: XCTestCase {
 
     // MARK: - Free User Tests
 
-    func testFreeUserInitialState() {
-        XCTAssertEqual(subscriptionManager.subscriptionTier, .free)
-        XCTAssertTrue(subscriptionManager.isFree)
-        XCTAssertFalse(subscriptionManager.isPremium)
+    func testInitialStateUnlockedPremium() {
+        XCTAssertEqual(subscriptionManager.subscriptionTier, .premium)
+        XCTAssertFalse(subscriptionManager.isFree)
+        XCTAssertTrue(subscriptionManager.isPremium)
         XCTAssertTrue(subscriptionManager.canRecord)
         XCTAssertFalse(subscriptionManager.recordingLimitReached)
+        XCTAssertEqual(subscriptionManager.remainingRecordingTime, .infinity)
     }
 
-    func testFreeUserRecordingLimit() {
-        // Should be able to record initially
+    func testRecordingLimitDisabledWhenPremiumUnlocked() {
+        // Should be unlimited from the start
         XCTAssertTrue(subscriptionManager.canRecord)
-        XCTAssertEqual(subscriptionManager.remainingRecordingTime, 180.0)
+        XCTAssertEqual(subscriptionManager.remainingRecordingTime, .infinity)
 
         // Simulate recording for 2:30
         subscriptionManager.updateRecordingDuration(150)
-        XCTAssertTrue(subscriptionManager.showTimeWarning)
+        XCTAssertFalse(subscriptionManager.showTimeWarning)
         XCTAssertTrue(subscriptionManager.canRecord)
-        XCTAssertEqual(subscriptionManager.remainingRecordingTime, 30.0)
+        XCTAssertEqual(subscriptionManager.remainingRecordingTime, .infinity)
 
         // Simulate recording for 3:00
         subscriptionManager.updateRecordingDuration(180)
-        XCTAssertTrue(subscriptionManager.recordingLimitReached)
-        XCTAssertFalse(subscriptionManager.canRecord)
-        XCTAssertEqual(subscriptionManager.remainingRecordingTime, 0.0)
-        XCTAssertTrue(subscriptionManager.showUpgradePrompt)
+        XCTAssertFalse(subscriptionManager.recordingLimitReached)
+        XCTAssertTrue(subscriptionManager.canRecord)
+        XCTAssertEqual(subscriptionManager.remainingRecordingTime, .infinity)
+        XCTAssertFalse(subscriptionManager.showUpgradePrompt)
     }
 
     func testResetRecordingDuration() {
         subscriptionManager.updateRecordingDuration(180)
-        XCTAssertTrue(subscriptionManager.recordingLimitReached)
+        // With premium unlocked, limit is never reached
+        XCTAssertFalse(subscriptionManager.recordingLimitReached)
 
         subscriptionManager.resetRecordingDuration()
         XCTAssertEqual(subscriptionManager.currentRecordingDuration, 0)

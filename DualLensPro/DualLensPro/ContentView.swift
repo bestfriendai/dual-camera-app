@@ -7,12 +7,14 @@
 
 import SwiftUI
 import AVFoundation
+import Combine
 
 struct ContentView: View {
     // Use StateObject to properly observe CameraViewModel's @Published properties
     @StateObject private var cameraViewModel = CameraViewModel()
     @State private var showPermissionAlert = false
     @State private var debugAuthStatus = "Initializing..."
+    @State private var cancellables = Set<AnyCancellable>()
 
     var body: some View {
         ZStack {
@@ -104,21 +106,11 @@ struct ContentView: View {
             */
         }
         .onAppear {
-            // Check authorization when view appears
+            setupNotificationObservers()
             cameraViewModel.checkAuthorization()
         }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
-            // Re-check when app becomes active (handles iOS 26 permission dialogs)
-            // Only check if not already authorized to prevent duplicate setup attempts
-            if !cameraViewModel.isAuthorized {
-                print("🔔 App became active - re-checking authorization")
-                cameraViewModel.checkAuthorization()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .init("ForceCheckAuthorization"))) { _ in
-            // Manual trigger from PermissionView
-            print("🔔 Received ForceCheckAuthorization notification")
-            cameraViewModel.checkAuthorization()
+        .onDisappear {
+            teardownNotificationObservers()
         }
         .alert("Camera Access Required", isPresented: $showPermissionAlert) {
             Button("Settings", action: openSettings)
@@ -126,6 +118,33 @@ struct ContentView: View {
         } message: {
             Text("Please enable camera and microphone access in Settings to use DualLens Pro.")
         }
+    }
+
+    private func setupNotificationObservers() {
+        // App lifecycle - observe when app becomes active
+        NotificationCenter.default
+            .publisher(for: UIApplication.didBecomeActiveNotification)
+            .sink { [weak cameraViewModel] _ in
+                if let vm = cameraViewModel, !vm.isAuthorized {
+                    print("🔔 App became active - re-checking authorization")
+                    vm.checkAuthorization()
+                }
+            }
+            .store(in: &cancellables)
+
+        // Manual authorization check trigger
+        NotificationCenter.default
+            .publisher(for: .init("ForceCheckAuthorization"))
+            .sink { [weak cameraViewModel] _ in
+                print("🔔 Received ForceCheckAuthorization notification")
+                cameraViewModel?.checkAuthorization()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func teardownNotificationObservers() {
+        cancellables.removeAll()
+        print("🧹 ContentView notification observers cleaned up")
     }
 
     private func openSettings() {
