@@ -72,6 +72,15 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
     nonisolated(unsafe) private var frontCameraInput: AVCaptureDeviceInput?
     nonisolated(unsafe) private var backCameraInput: AVCaptureDeviceInput?
 
+    // ✅ Public accessors for camera devices (for zoom range initialization)
+    var frontCamera: AVCaptureDevice? {
+        frontCameraInput?.device
+    }
+
+    var backCamera: AVCaptureDevice? {
+        backCameraInput?.device
+    }
+
     // MARK: - Video Outputs (accessed from delegate callbacks on specific queues)
     nonisolated(unsafe) private var frontVideoOutput: AVCaptureVideoDataOutput?
     nonisolated(unsafe) private var backVideoOutput: AVCaptureVideoDataOutput?
@@ -183,9 +192,19 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             let oldValue = _frontZoomFactor
             _frontZoomFactor = newValue
 
+            print("🔍 DualCameraManager.frontZoomFactor setter: \(oldValue) -> \(newValue), setupComplete: \(isCameraSetupComplete)")
+
             // ✅ CRITICAL ZOOM FIX: Use centralized validation method
             // Only trigger update if session is ready and value changed
-            guard isCameraSetupComplete, oldValue != newValue else { return }
+            guard isCameraSetupComplete else {
+                print("⚠️ Camera setup not complete - zoom will be applied later")
+                return
+            }
+
+            guard oldValue != newValue else {
+                print("⚠️ Zoom value unchanged - skipping update")
+                return
+            }
 
             applyValidatedZoom(for: .front, factor: newValue)
         }
@@ -197,9 +216,19 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             let oldValue = _backZoomFactor
             _backZoomFactor = newValue
 
+            print("🔍 DualCameraManager.backZoomFactor setter: \(oldValue) -> \(newValue), setupComplete: \(isCameraSetupComplete)")
+
             // ✅ CRITICAL ZOOM FIX: Use centralized validation method
             // Only trigger update if session is ready and value changed
-            guard isCameraSetupComplete, oldValue != newValue else { return }
+            guard isCameraSetupComplete else {
+                print("⚠️ Camera setup not complete - zoom will be applied later")
+                return
+            }
+
+            guard oldValue != newValue else {
+                print("⚠️ Zoom value unchanged - skipping update")
+                return
+            }
 
             applyValidatedZoom(for: .back, factor: newValue)
         }
@@ -996,56 +1025,49 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
     }
 
     // ✅ CRITICAL ZOOM FIX: Centralized zoom validation - single source of truth for zoom application
-    // This method includes comprehensive validation: session running, device availability, connection, and range clamping
+    // This method includes comprehensive validation: device availability, connection, and range clamping
     // Replaces multiple inconsistent zoom code paths (updateZoomSafely, updateZoom, applyZoomDirectly)
     private func applyValidatedZoom(for position: CameraPosition, factor: CGFloat) {
-        Task { @MainActor in
-            let isRunning = self.activeSession.isRunning
+        // ✅ FIX: Always run on sessionQueue, don't check if running (zoom should work even during preview)
+        sessionQueue.async { [weak self] in
+            guard let self = self else { return }
 
-            self.sessionQueue.async { [weak self] in
-                guard let self = self else { return }
+            // Validation 1: Get device
+            let device: AVCaptureDevice?
+            switch position {
+            case .front:
+                device = self.frontCameraInput?.device
+            case .back:
+                device = self.backCameraInput?.device
+            }
 
-                // Validation 1: Session running
-                guard isRunning else {
-                    print("⚠️ Cannot zoom \(position): session not running")
-                    return
-                }
+            guard let device = device else {
+                print("⚠️ Cannot zoom \(position): device not available")
+                return
+            }
 
-                // Validation 2: Get device
-                let device: AVCaptureDevice?
-                switch position {
-                case .front:
-                    device = self.frontCameraInput?.device
-                case .back:
-                    device = self.backCameraInput?.device
-                }
+            // Validation 2: Device connected
+            guard device.isConnected else {
+                print("⚠️ Cannot zoom \(position): device not connected")
+                return
+            }
 
-                guard let device = device else {
-                    print("⚠️ Cannot zoom \(position): device not available")
-                    return
-                }
+            // Validation 3: Clamp to device capabilities
+            let minZoom = device.minAvailableVideoZoomFactor
+            let maxZoom = device.maxAvailableVideoZoomFactor
+            let clampedFactor = min(max(factor, minZoom), maxZoom)
 
-                // Validation 3: Device connected
-                guard device.isConnected else {
-                    print("⚠️ Cannot zoom \(position): device not connected")
-                    return
-                }
+            print("🔍 Applying zoom to \(position): \(factor) -> \(clampedFactor) (range: \(minZoom)-\(maxZoom))")
 
-                // Validation 4: Clamp to device capabilities
-                let minZoom = device.minAvailableVideoZoomFactor
-                let maxZoom = device.maxAvailableVideoZoomFactor
-                let clampedFactor = min(max(factor, minZoom), maxZoom)
+            // Apply zoom with device lock
+            do {
+                try device.lockForConfiguration()
+                device.videoZoomFactor = clampedFactor
+                device.unlockForConfiguration()
 
-                // Apply zoom with device lock
-                do {
-                    try device.lockForConfiguration()
-                    device.videoZoomFactor = clampedFactor
-                    device.unlockForConfiguration()
-
-                    print("✅ Zoom applied: \(position) = \(String(format: "%.2f", clampedFactor))x (requested: \(String(format: "%.2f", factor))x)")
-                } catch {
-                    print("❌ Failed to apply zoom to \(position): \(error.localizedDescription)")
-                }
+                print("✅ Zoom applied: \(position) = \(String(format: "%.2f", clampedFactor))x")
+            } catch {
+                print("❌ Failed to apply zoom to \(position): \(error.localizedDescription)")
             }
         }
     }
@@ -1228,15 +1250,39 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             throw CameraError.photoOutputNotConfigured
         }
 
-        // Calculate dimensions for stacking
-        let frontExtent = frontImage.extent
-        let backExtent = backImage.extent
+        // ✅ Apply orientation transforms (same as video)
+        let orientation = UIDevice.current.orientation
+        let isPortrait = (orientation == .portrait ||
+                         orientation == .portraitUpsideDown ||
+                         orientation == .unknown ||
+                         orientation == .faceUp ||
+                         orientation == .faceDown)
+
+        var frontOriented = frontImage
+        var backOriented = backImage
+
+        // Rotate for portrait mode
+        if isPortrait {
+            frontOriented = frontOriented.oriented(.right)
+            backOriented = backOriented.oriented(.right)
+            print("🔄 Rotated photo images 90° for portrait mode")
+        }
+
+        // Mirror front camera (selfie effect)
+        let mirrorTransform = CGAffineTransform(scaleX: -1, y: 1)
+            .translatedBy(x: -frontOriented.extent.width, y: 0)
+        frontOriented = frontOriented.transformed(by: mirrorTransform)
+        print("🪞 Mirrored front camera photo")
+
+        // Calculate dimensions for stacking (using oriented images)
+        let frontExtent = frontOriented.extent
+        let backExtent = backOriented.extent
         let maxWidth = max(frontExtent.width, backExtent.width)
         let totalHeight = frontExtent.height + backExtent.height
 
         // Position front on top, back on bottom
-        let frontPositioned = frontImage.transformed(by: CGAffineTransform(translationX: 0, y: backExtent.height))
-        let backPositioned = backImage
+        let frontPositioned = frontOriented.transformed(by: CGAffineTransform(translationX: 0, y: backExtent.height))
+        let backPositioned = backOriented
 
         // Composite: front over back
         let composed = frontPositioned.composited(over: backPositioned)
@@ -1819,33 +1865,27 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         let bitRate = recordingQuality.bitRate
         let frameRate = captureMode.frameRate  // ✅ Get dynamic frame rate from capture mode
 
-        // ✅ CRITICAL FIX: Camera buffers are ALWAYS in landscape (1920x1080)
-        // For portrait videos, we need to swap dimensions so videos display correctly
-        // We'll rotate the pixel buffers before writing them
+        // ✅ FORCE PORTRAIT MODE: Always record videos in portrait orientation
+        // Camera buffers are ALWAYS in landscape (1920x1080)
+        // We'll rotate the pixel buffers to portrait (1080x1920) for all recordings
         let orientation = UIDevice.current.orientation
-        let isPortrait = (orientation == .portrait || orientation == .portraitUpsideDown ||
-                         orientation == .unknown || orientation == .faceUp || orientation == .faceDown)
+        let isPortrait = true  // ✅ ALWAYS PORTRAIT - User requirement
 
-        // ✅ CRITICAL FIX: Swap dimensions for ALL videos in portrait mode
-        // This ensures videos display correctly without relying on transform metadata
+        print("📱 FORCED PORTRAIT MODE - All videos will be recorded in portrait orientation")
+
+        // ✅ CRITICAL FIX: Swap dimensions for portrait mode so pixel rotation works
+        // RecordingCoordinator rotates pixel buffers from landscape (1920x1080) to portrait (1080x1920)
         let dimensions: (width: Int, height: Int)
         let combinedDimensions: (width: Int, height: Int)
 
-        if isPortrait {
-            // Portrait: swap dimensions for all videos (1080x1920)
-            dimensions = (width: baseDimensions.height, height: baseDimensions.width)
-            combinedDimensions = (width: baseDimensions.height, height: baseDimensions.width)
-            print("📱 Portrait mode - All videos: \(dimensions.width)x\(dimensions.height)")
-        } else {
-            // Landscape: keep original dimensions (1920x1080)
-            dimensions = (width: baseDimensions.width, height: baseDimensions.height)
-            combinedDimensions = (width: baseDimensions.width, height: baseDimensions.height)
-            print("📱 Landscape mode - All videos: \(dimensions.width)x\(dimensions.height)")
-        }
+        // Always use portrait dimensions (1080x1920)
+        dimensions = (width: baseDimensions.height, height: baseDimensions.width)
+        combinedDimensions = (width: baseDimensions.height, height: baseDimensions.width)
+        print("📱 Portrait dimensions - All videos: \(dimensions.width)x\(dimensions.height) (will rotate pixels)")
 
-        // ✅ No transform needed - we're rotating pixels directly
+        // ✅ No transform needed since we're rotating pixels
         let transform = CGAffineTransform.identity
-        print("🔄 Using identity transform (pixels will be rotated)")
+        print("🔄 Using identity transform (rotating pixels instead)")
 
         print("🎬 Setting up writers with \(frameRate)fps, dimensions: \(dimensions.width)x\(dimensions.height)")
 
@@ -1862,7 +1902,8 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             combinedDimensions: combinedDimensions,
             bitRate: bitRate,
             frameRate: frameRate,  // ✅ Pass dynamic frame rate
-            videoTransform: transform  // ✅ Proper orientation transform
+            videoTransform: transform,  // ✅ Proper orientation transform
+            deviceOrientation: orientation  // ✅ Pass device orientation to compositor
         )
 
         print("✅ RecordingCoordinator configured and ready")

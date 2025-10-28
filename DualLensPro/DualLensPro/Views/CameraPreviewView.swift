@@ -87,22 +87,23 @@ struct CameraPreviewView: UIViewRepresentable {
         @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
             switch gesture.state {
             case .began:
-                lastScale = 1.0
+                lastScale = currentZoom
+                print("🤏 Pinch began - currentZoom: \(currentZoom), range: \(minZoom)-\(maxZoom)")
             case .changed:
-                let scale = gesture.scale
+                // ✅ IMPROVED ZOOM: Use gesture.scale directly multiplied by initial zoom
+                // This provides more natural and responsive pinch-to-zoom behavior
+                let newZoom = lastScale * gesture.scale
 
-                // Calculate new zoom factor
-                let delta = (scale - lastScale) * 0.5
-                let newZoom = currentZoom * (1 + delta)
-
-                // ✅ CRITICAL ZOOM FIX: Clamp to actual device capabilities instead of hardcoded 0.5-10.0
+                // ✅ CRITICAL ZOOM FIX: Clamp to actual device capabilities
                 // This fixes the "zoom stuck at 1.0x" issue where gestures requested invalid zoom levels
                 let clampedZoom = min(max(newZoom, minZoom), maxZoom)
 
+                print("🤏 Pinch changed - gestureScale: \(gesture.scale), newZoom: \(newZoom), clamped: \(clampedZoom)")
                 onZoomChange(clampedZoom)
-                lastScale = scale
+                currentZoom = clampedZoom
             case .ended, .cancelled:
-                lastScale = 1.0
+                lastScale = currentZoom
+                print("🤏 Pinch ended - final zoom: \(currentZoom)")
             default:
                 break
             }

@@ -11,6 +11,7 @@ import CoreVideo
 import AVFoundation
 import Metal
 import os.lock
+import UIKit
 
 /// Real-time compositor for creating stacked dual-camera frames
 /// Uses Core Image for GPU-accelerated composition
@@ -19,6 +20,10 @@ final class FrameCompositor: Sendable {
     private let context: CIContext
     private let width: Int
     private let height: Int
+
+    // ✅ Device orientation tracking
+    private let deviceOrientation: UIDeviceOrientation
+    private let isPortrait: Bool
 
     // Thread-safe state - CVPixelBufferPool is thread-safe but not Sendable
     nonisolated(unsafe) private var pixelBufferPool: CVPixelBufferPool?
@@ -29,9 +34,17 @@ final class FrameCompositor: Sendable {
     nonisolated(unsafe) private var isShuttingDown = false
     nonisolated(unsafe) private var lastFrontBuffer: (buffer: CVPixelBuffer, time: CMTime)?
 
-    init(width: Int, height: Int) {
+    init(width: Int, height: Int, deviceOrientation: UIDeviceOrientation) {
         self.width = width
         self.height = height
+        self.deviceOrientation = deviceOrientation
+
+        // Determine if we're in portrait mode
+        self.isPortrait = (deviceOrientation == .portrait ||
+                          deviceOrientation == .portraitUpsideDown ||
+                          deviceOrientation == .unknown ||
+                          deviceOrientation == .faceUp ||
+                          deviceOrientation == .faceDown)
 
         // Use Metal for GPU acceleration
         let options: [CIContextOption: Any] = [
@@ -50,6 +63,8 @@ final class FrameCompositor: Sendable {
             self.context = CIContext(options: options)
             print("⚠️ FrameCompositor using software rendering")
         }
+
+        print("✅ FrameCompositor initialized: \(width)x\(height), orientation: \(deviceOrientation.rawValue), isPortrait: \(isPortrait)")
 
         // Create pixel buffer pool for efficient buffer reuse
         let poolAttributes: [String: Any] = [
@@ -186,26 +201,31 @@ final class FrameCompositor: Sendable {
         // Create CIImages from pixel buffers
         let frontImage = CIImage(cvPixelBuffer: front)
         let backImage = CIImage(cvPixelBuffer: back)
-        
+
+        // ✅ Apply orientation transforms before scaling
+        let frontOriented = orientImage(frontImage, isFrontCamera: true)
+        let backOriented = orientImage(backImage, isFrontCamera: false)
+
         // Calculate dimensions for stacking
         let outputWidth = CGFloat(width)
         let outputHeight = CGFloat(height)
         let halfHeight = outputHeight / 2
-        
-        // Scale images to fit half-height
-        let frontScaled = scaleToFit(image: frontImage, width: outputWidth, height: halfHeight)
-        let backScaled = scaleToFit(image: backImage, width: outputWidth, height: halfHeight)
+
+        // Scale oriented images to fit half-height
+        let frontScaled = scaleToFit(image: frontOriented, width: outputWidth, height: halfHeight)
+        let backScaled = scaleToFit(image: backOriented, width: outputWidth, height: halfHeight)
         
         // Position front on top, back on bottom
         let frontPositioned = frontScaled.transformed(by: CGAffineTransform(translationX: 0, y: halfHeight))
         let backPositioned = backScaled
-        
+
         // Composite: front over back
         let composed = frontPositioned.composited(over: backPositioned)
-        
-        // Render to output buffer
-        context.render(composed, to: outputBuffer)
-        
+
+        // ✅ FIX: Render with explicit bounds and colorspace to prevent green screen
+        let outputRect = CGRect(x: 0, y: 0, width: width, height: height)
+        context.render(composed, to: outputBuffer, bounds: outputRect, colorSpace: CGColorSpaceCreateDeviceRGB())
+
         return outputBuffer
     }
     
@@ -321,7 +341,7 @@ final class FrameCompositor: Sendable {
             return nil
         }
     }
-    
+
     private func scaleToFit(image: CIImage, width: CGFloat, height: CGFloat) -> CIImage {
         let imageSize = image.extent.size
         let scaleX = width / imageSize.width
@@ -343,6 +363,29 @@ final class FrameCompositor: Sendable {
         // Crop to exact dimensions
         let cropRect = CGRect(x: 0, y: 0, width: width, height: height)
         return centeredImage.cropped(to: cropRect)
+    }
+
+    /// ✅ Apply proper orientation to camera images
+    /// Rotates landscape buffers to portrait and mirrors front camera
+    private func orientImage(_ image: CIImage, isFrontCamera: Bool) -> CIImage {
+        var oriented = image
+
+        // Step 1: Rotate based on device orientation
+        // Camera buffers are always landscape (1920x1080), we need to rotate for portrait
+        if isPortrait {
+            // Rotate 90° clockwise to convert landscape → portrait
+            oriented = oriented.oriented(.right)
+        }
+
+        // Step 2: Mirror front camera horizontally (selfie mirror effect)
+        if isFrontCamera {
+            // Mirror horizontally by flipping X axis
+            let transform = CGAffineTransform(scaleX: -1, y: 1)
+                .translatedBy(x: -oriented.extent.width, y: 0)
+            oriented = oriented.transformed(by: transform)
+        }
+
+        return oriented
     }
 }
 

@@ -247,6 +247,14 @@ class CameraViewModel: ObservableObject {
             // This is needed because session.isRunning = true doesn't mean frames are rendering yet
             try? await Task.sleep(nanoseconds: 200_000_000) // 200ms for preview to start
 
+            // ✅ FIX: Update zoom ranges from actual device capabilities
+            // This fixes pinch zoom by using real device min/max instead of defaults
+            configuration.updateZoomRanges(
+                frontCamera: cameraManager.frontCamera,
+                backCamera: cameraManager.backCamera
+            )
+            print("✅ Zoom ranges updated - Front: \(configuration.frontMinZoom)-\(configuration.frontMaxZoom)x, Back: \(configuration.backMinZoom)-\(configuration.backMaxZoom)x")
+
             // Mark camera as ready for UI
             self.isCameraReady = true
             print("✅ Camera ready flag set to true (total time: ~\((attempts * 50) + 200)ms)")
@@ -350,15 +358,19 @@ class CameraViewModel: ObservableObject {
 
     // MARK: - Zoom Control
     func updateFrontZoom(_ factor: CGFloat) {
+        print("🔍 ViewModel.updateFrontZoom(\(factor)) - current: \(configuration.frontZoomFactor)")
         HapticManager.shared.zoomChange()
         configuration.updateFrontZoom(factor)
         cameraManager.frontZoomFactor = factor
+        print("🔍 Front zoom updated to: \(cameraManager.frontZoomFactor)")
     }
 
     func updateBackZoom(_ factor: CGFloat) {
+        print("🔍 ViewModel.updateBackZoom(\(factor)) - current: \(configuration.backZoomFactor)")
         HapticManager.shared.zoomChange()
         configuration.updateBackZoom(factor)
         cameraManager.backZoomFactor = factor
+        print("🔍 Back zoom updated to: \(cameraManager.backZoomFactor)")
     }
 
     func setZoomPreset(_ preset: CGFloat) {
@@ -473,6 +485,11 @@ class CameraViewModel: ObservableObject {
         try await cameraManager.startRecording()
         print("✅ cameraManager.startRecording() completed")
         print("📹 New isRecording state: \(isRecording)")
+
+        // ✅ FIX: Ensure controls are visible during recording so user can stop
+        controlsVisible = true
+        print("✅ Controls set to visible during recording")
+
         print("📹 ========== START RECORDING COMPLETE ==========")
     }
 
@@ -699,8 +716,14 @@ class CameraViewModel: ObservableObject {
     }
 
     func toggleControlsVisibility() {
+        // ✅ FIX: Don't hide controls during recording - users need the stop button!
         // ✅ FIX: Don't hide controls if advanced menu or mode selector is open
         // This prevents accidentally closing menus when tapping on them
+        guard !isRecording else {
+            print("⚠️ Recording in progress - controls must remain visible")
+            return
+        }
+
         guard !showAdvancedControls && !showModeSelector else {
             print("⚠️ Advanced controls or mode selector is open - ignoring tap")
             return

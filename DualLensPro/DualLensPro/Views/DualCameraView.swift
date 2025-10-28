@@ -375,9 +375,6 @@ struct DualCameraView: View {
                     }
                 }
             }
-            .onTapGesture {
-                viewModel.toggleControlsVisibility()
-            }
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: viewModel.showSaveSuccessToast)
             .sheet(isPresented: $viewModel.showSettings) {
                 SettingsView(viewModel: viewModel)

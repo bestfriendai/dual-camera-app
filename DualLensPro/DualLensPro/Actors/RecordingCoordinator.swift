@@ -11,6 +11,7 @@ import CoreMedia
 import Foundation
 import CoreImage
 import CoreVideo
+import UIKit
 
 /// Thread-safe recording coordinator using Swift 6 actor isolation
 /// Eliminates all data races in video recording pipeline
@@ -70,6 +71,8 @@ actor RecordingCoordinator {
     // MARK: - Orientation tracking
     private var needsRotation = false
     private var ciContext: CIContext?
+    private var targetWidth: Int = 0
+    private var targetHeight: Int = 0
 
     // MARK: - Configuration
     func configure(
@@ -80,19 +83,26 @@ actor RecordingCoordinator {
         combinedDimensions: (width: Int, height: Int),
         bitRate: Int,
         frameRate: Int,
-        videoTransform: CGAffineTransform
+        videoTransform: CGAffineTransform,
+        deviceOrientation: UIDeviceOrientation
     ) throws {
         print("🎬 RecordingCoordinator: Configuring...")
         print("🎬 Frame rate: \(frameRate)fps, Transform: \(videoTransform)")
         print("🎬 Individual dimensions: \(dimensions.width)x\(dimensions.height)")
         print("🎬 Combined dimensions: \(combinedDimensions.width)x\(combinedDimensions.height)")
 
+        // ✅ Store target dimensions for rotation
+        self.targetWidth = dimensions.width
+        self.targetHeight = dimensions.height
+
         // ✅ Detect if we need to rotate pixel buffers (portrait mode)
         // If dimensions are 1080x1920 (portrait), we need to rotate 1920x1080 buffers
         needsRotation = (dimensions.width < dimensions.height)
         if needsRotation {
             ciContext = CIContext(options: [.useSoftwareRenderer: false])
-            print("🔄 Portrait mode detected - will rotate pixel buffers")
+            print("🔄 Portrait mode detected - will rotate pixel buffers to \(targetWidth)x\(targetHeight)")
+        } else {
+            print("ℹ️  Landscape mode - no pixel rotation needed")
         }
 
         self.frontURL = frontURL
@@ -227,8 +237,12 @@ actor RecordingCoordinator {
         }
 
         // ✅ CRITICAL FIX: Initialize frame compositor with portrait dimensions for vertical stacking
-        compositor = FrameCompositor(width: combinedDimensions.width, height: combinedDimensions.height)
-        print("✅ FrameCompositor initialized for combined output (actor-isolated)")
+        compositor = FrameCompositor(
+            width: combinedDimensions.width,
+            height: combinedDimensions.height,
+            deviceOrientation: deviceOrientation
+        )
+        print("✅ FrameCompositor initialized for combined output with orientation: \(deviceOrientation.rawValue)")
 
         print("✅ RecordingCoordinator: Configuration complete")
         print("   Front: \(frontURL.lastPathComponent)")
@@ -280,16 +294,26 @@ actor RecordingCoordinator {
     }
 
     // MARK: - Pixel Buffer Rotation
-    /// Rotates a pixel buffer from landscape (1920x1080) to portrait (1080x1920)
-    private func rotatePixelBuffer(_ pixelBuffer: CVPixelBuffer, to dimensions: (width: Int, height: Int)) -> CVPixelBuffer? {
-        guard let context = ciContext else { return nil }
+    /// Rotates and optionally mirrors a pixel buffer from landscape (1920x1080) to portrait (1080x1920)
+    private func rotateAndMirrorPixelBuffer(_ pixelBuffer: CVPixelBuffer, to dimensions: (width: Int, height: Int), mirror: Bool) -> CVPixelBuffer? {
+        guard let context = ciContext else {
+            print("❌ No CIContext for rotation")
+            return nil
+        }
 
         // Create CIImage from pixel buffer
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
 
-        // ✅ Use CIImage.oriented() for proper rotation
-        // .right = 90° clockwise rotation (landscape → portrait)
-        let rotatedImage = ciImage.oriented(.right)
+        // ✅ Rotate 90° CLOCKWISE: landscape (1920x1080) → portrait (1080x1920)
+        // Using oriented() is more reliable than manual transforms
+        var rotated = ciImage.oriented(.right) // .right = 90° clockwise
+
+        // ✅ Mirror horizontally if requested (for front camera selfie effect)
+        if mirror {
+            let mirrorTransform = CGAffineTransform(scaleX: -1, y: 1)
+                .translatedBy(x: -rotated.extent.width, y: 0)
+            rotated = rotated.transformed(by: mirrorTransform)
+        }
 
         // Create output pixel buffer with portrait dimensions
         var outputBuffer: CVPixelBuffer?
@@ -310,10 +334,23 @@ actor RecordingCoordinator {
             return nil
         }
 
-        // Render rotated image to output buffer
-        // The extent of the rotated image should match our output dimensions
+        // ✅ Render to output buffer with correct bounds
+        // Rotated image should be 1080x1920 (portrait) matching output buffer
         let outputRect = CGRect(x: 0, y: 0, width: dimensions.width, height: dimensions.height)
-        context.render(rotatedImage, to: output, bounds: outputRect, colorSpace: CGColorSpaceCreateDeviceRGB())
+
+        // Scale to fit if dimensions don't match exactly
+        let scaleX = CGFloat(dimensions.width) / rotated.extent.width
+        let scaleY = CGFloat(dimensions.height) / rotated.extent.height
+        let scale = min(scaleX, scaleY)
+
+        let scaledImage = rotated.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+
+        // Center in output
+        let offsetX = (CGFloat(dimensions.width) - scaledImage.extent.width) / 2
+        let offsetY = (CGFloat(dimensions.height) - scaledImage.extent.height) / 2
+        let centeredImage = scaledImage.transformed(by: CGAffineTransform(translationX: offsetX, y: offsetY))
+
+        context.render(centeredImage, to: output, bounds: outputRect, colorSpace: CGColorSpaceCreateDeviceRGB())
 
         return output
     }
@@ -336,7 +373,8 @@ actor RecordingCoordinator {
         // ✅ Rotate pixel buffer if in portrait mode
         let bufferToWrite: CVPixelBuffer
         if needsRotation {
-            if let rotated = rotatePixelBuffer(pixelBuffer, to: (width: CVPixelBufferGetHeight(pixelBuffer), height: CVPixelBufferGetWidth(pixelBuffer))) {
+            // ✅ FIX: Use configured dimensions and mirror front camera
+            if let rotated = rotateAndMirrorPixelBuffer(pixelBuffer, to: (width: targetWidth, height: targetHeight), mirror: true) {
                 bufferToWrite = rotated
             } else {
                 print("⚠️ Failed to rotate front buffer - using original")
@@ -365,10 +403,11 @@ actor RecordingCoordinator {
            let input = backVideoInput,
            input.isReadyForMoreMediaData {
 
-            // ✅ Rotate pixel buffer if in portrait mode
+            // ✅ Rotate pixel buffer if in portrait mode (no mirroring for back camera)
             let bufferToWrite: CVPixelBuffer
             if needsRotation {
-                if let rotated = rotatePixelBuffer(pixelBuffer, to: (width: CVPixelBufferGetHeight(pixelBuffer), height: CVPixelBufferGetWidth(pixelBuffer))) {
+                // ✅ FIX: Use configured dimensions, don't mirror back camera
+                if let rotated = rotateAndMirrorPixelBuffer(pixelBuffer, to: (width: targetWidth, height: targetHeight), mirror: false) {
                     bufferToWrite = rotated
                 } else {
                     print("⚠️ Failed to rotate back buffer - using original")
