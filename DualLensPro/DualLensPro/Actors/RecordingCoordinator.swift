@@ -9,7 +9,6 @@
 import AVFoundation
 import CoreMedia
 import Foundation
-import CoreImage
 import CoreVideo
 import UIKit
 
@@ -68,12 +67,6 @@ actor RecordingCoordinator {
     private var lastBackAudioPTS: CMTime?
     private var lastCombinedAudioPTS: CMTime?
 
-    // MARK: - Orientation tracking
-    private var needsRotation = false
-    private var ciContext: CIContext?
-    private var targetWidth: Int = 0
-    private var targetHeight: Int = 0
-
     // MARK: - Configuration
     func configure(
         frontURL: URL,
@@ -87,18 +80,9 @@ actor RecordingCoordinator {
         backTransform: CGAffineTransform,   //
         deviceOrientation: UIDeviceOrientation
     ) throws {
-        print("🎬 RecordingCoordinator: Configuring...")
+        print("🎬 RecordingCoordinator: Configuring (Hybrid Approach)...")
         print("🎬 Source (Landscape) dimensions: \(dimensions.width)x\(dimensions.height)")
         print("🎬 Combined (Portrait Stacked) dimensions: \(combinedDimensions.width)x\(combinedDimensions.height)")
-
-        // Target dimensions for our manual rotation (used only for the compositor)
-        self.targetWidth = combinedDimensions.width   // e.g., 1080
-        self.targetHeight = dimensions.width          // e.g., 1920 (for a single portrait frame)
-
-        if ciContext == nil {
-            ciContext = CIContext(options: [.cacheIntermediates: false])
-            print("✅ CIContext initialized for pixel rotation")
-        }
 
         self.frontURL = frontURL
         self.backURL = backURL
@@ -255,51 +239,6 @@ actor RecordingCoordinator {
         print("✅ RecordingCoordinator: All writers started successfully")
     }
 
-    // MARK: - Pixel Buffer Rotation
-    /// Rotates and optionally mirrors a pixel buffer from landscape (1920x1080) to portrait (1080x1920)
-    /// Uses .oriented(.right) for standard 90-degree clockwise rotation
-    private func rotateAndMirrorPixelBuffer(_ pixelBuffer: CVPixelBuffer, to dimensions: (width: Int, height: Int), mirror: Bool) -> CVPixelBuffer? {
-        guard let context = ciContext else {
-            print("❌ No CIContext for rotation")
-            return nil
-        }
-
-        // 1. Create a CIImage from the original landscape pixel buffer.
-        let sourceImage = CIImage(cvPixelBuffer: pixelBuffer)
-
-        // 2. ✅ FIX: Apply a simple and correct 90-degree CLOCKWISE rotation.
-        // The '.oriented(.right)' transform is the standard way to convert the camera's
-        // landscape buffer to a portrait orientation. This is equivalent to EXIF orientation 6.
-        var rotatedImage = sourceImage.oriented(.right)
-
-        // 3. ✅ FIX: If mirroring is required, apply a horizontal flip AFTER the rotation.
-        if mirror {
-            // The image is now in portrait, so we can apply a simple horizontal mirror.
-            rotatedImage = rotatedImage.transformed(by: CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: -rotatedImage.extent.width, y: 0))
-        }
-
-        // 4. Create the output pixel buffer with the correct PORTRAIT dimensions.
-        var outputBuffer: CVPixelBuffer?
-        let status = CVPixelBufferCreate(
-            kCFAllocatorDefault,
-            dimensions.width,  // e.g., 1080
-            dimensions.height, // e.g., 1920
-            kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-            [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary,
-            &outputBuffer
-        )
-
-        guard status == kCVReturnSuccess, let finalBuffer = outputBuffer else {
-            print("❌ Failed to create rotated pixel buffer")
-            return nil
-        }
-
-        // 5. Render the fully transformed image into the output buffer.
-        context.render(rotatedImage, to: finalBuffer)
-
-        return finalBuffer
-    }
-
     func appendFrontPixelBuffer(_ pixelBuffer: CVPixelBuffer, time: CMTime) throws {
         guard isWriting else { return }
 
@@ -316,18 +255,8 @@ actor RecordingCoordinator {
             }
         }
 
-        // 2. Rotate the buffer ONLY for the compositor.
-        guard let rotatedBuffer = rotateAndMirrorPixelBuffer(
-            pixelBuffer,
-            to: (width: self.targetWidth, height: self.targetHeight),
-            mirror: true
-        ) else {
-            print("⚠️ Failed to rotate front buffer for compositor")
-            return
-        }
-
-        // 3. Cache the rotated buffer for the combined video.
-        lastFrontBuffer = (buffer: rotatedBuffer, time: time)
+        // Cache the most recent front buffer for the combined video compositor.
+        lastFrontBuffer = (buffer: pixelBuffer, time: time)
     }
 
     func appendBackPixelBuffer(_ pixelBuffer: CVPixelBuffer, time: CMTime) async throws {
@@ -346,22 +275,12 @@ actor RecordingCoordinator {
             }
         }
 
-        // 2. Rotate the buffer ONLY for the compositor.
-        guard let rotatedBuffer = rotateAndMirrorPixelBuffer(
-            pixelBuffer,
-            to: (width: targetWidth, height: targetHeight),
-            mirror: false
-        ) else {
-            print("⚠️ Failed to rotate back buffer for compositor")
-            return
-        }
-
-        // 3. Create the stacked composition using the manually rotated buffers.
+        // Create the stacked composition using the most recent buffers.
         if let adaptor = combinedPixelBufferAdaptor,
            let input = combinedVideoInput,
            input.isReadyForMoreMediaData,
            let compositor = compositor {
-            if let composedBuffer = compositor.stacked(front: lastFrontBuffer?.buffer, back: rotatedBuffer) {
+            if let composedBuffer = compositor.stacked(front: lastFrontBuffer?.buffer, back: pixelBuffer) {
                 let ok2 = adaptor.append(composedBuffer, withPresentationTime: time)
                 if ok2 {
                     lastCombinedVideoPTS = time

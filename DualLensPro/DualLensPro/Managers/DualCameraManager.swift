@@ -1870,41 +1870,52 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         // needs an explicit transform so the encoded tracks play back correctly.
         let orientation = UIDevice.current.orientation
 
-        // Use portrait dimensions by rotating base (landscape) dimensions
+        // ✅ HYBRID APPROACH: Individual videos use LANDSCAPE dimensions with metadata transforms
+        // Combined video uses PORTRAIT STACKED dimensions with manual pixel rotation
         let dimensions: (width: Int, height: Int)
         let combinedDimensions: (width: Int, height: Int)
 
-        // Portrait dimensions (swap width/height from the base landscape format)
-        // dimensions = (width: baseDimensions.height, height: baseDimensions.width)  // e.g., 1080x1920
-        // Combined video is stacked vertically, so double the height
-        // combinedDimensions = (width: baseDimensions.height, height: baseDimensions.width * 2)  // e.g., 1080x3840
+        // Individual videos: Use native LANDSCAPE dimensions (e.g., 1920x1080)
+        dimensions = (width: Int(baseDimensions.width), height: Int(baseDimensions.height))
 
-        // Changed per instructions: use landscape encoding dimensions instead of portrait
-        dimensions = (width: baseDimensions.width, height: baseDimensions.height)
-        combinedDimensions = (width: baseDimensions.width, height: baseDimensions.height * 2)
+        // Combined video: Use PORTRAIT STACKED dimensions (e.g., 1080x3840)
+        // Width = landscape height (1080), Height = landscape width * 2 (1920 * 2 = 3840)
+        combinedDimensions = (width: Int(baseDimensions.height), height: Int(baseDimensions.width) * 2)
 
-        print("🖼️ Encoding dimensions (landscape buffers): \(dimensions.width)x\(dimensions.height)")
-        print("🖼️ Combined dimensions (landscape buffers): \(combinedDimensions.width)x\(combinedDimensions.height)")
+        print("📱 Native Landscape Dimensions (individual videos): \(dimensions.width)x\(dimensions.height)")
+        print("📱 Combined Portrait Stacked Dimensions (merged video): \(combinedDimensions.width)x\(combinedDimensions.height)")
 
-        // Compute the correct rotation transform for the writer inputs based on device orientation
-        // This rotates the encoded track so that playback is upright without relying on metadata.
-        let rotationTransform = currentVideoTransform()
+        // ✅ Calculate transforms for writer metadata so saved videos match the live preview
+        let rawRotation = Int(videoRotationAngle())
+        let normalizedRotation = (rawRotation % 360 + 360) % 360
+        let videoSize = CGSize(width: CGFloat(dimensions.width), height: CGFloat(dimensions.height))
 
-        // Back camera: apply rotation only
-        let backTransform = rotationTransform
+        let backTransform: CGAffineTransform
+        switch normalizedRotation {
+        case 90:
+            // 90° clockwise (portrait)
+            backTransform = CGAffineTransform(translationX: 0, y: videoSize.width)
+                .rotated(by: -.pi / 2)
+        case 180:
+            backTransform = CGAffineTransform(translationX: videoSize.width, y: videoSize.height)
+                .rotated(by: .pi)
+        case 270:
+            // 270° clockwise == 90° counter-clockwise
+            backTransform = CGAffineTransform(translationX: videoSize.height, y: 0)
+                .rotated(by: .pi / 2)
+        default:
+            backTransform = .identity
+        }
 
-        // Front camera: apply rotation + horizontal mirror to match selfie-style preview
-        // Mirror is applied in the portrait coordinate space; translate by portrait width after scaling X by -1
-        // let mirrorInPortrait = CGAffineTransform(scaleX: -1, y: 1)
-        //     .translatedBy(x: CGFloat(dimensions.width), y: 0)
-        // let frontTransform = rotationTransform.concatenating(mirrorInPortrait)
+        let rotatedWidth = (normalizedRotation == 90 || normalizedRotation == 270) ? videoSize.height : videoSize.width
+        var frontMirror = CGAffineTransform.identity
+        frontMirror = frontMirror.translatedBy(x: rotatedWidth, y: 0)
+        frontMirror = frontMirror.scaledBy(x: -1, y: 1)
+        let frontTransform = frontMirror.concatenating(backTransform)
 
-        // Changed per instructions: use mirror transform in landscape coordinate space and rename variable
-        let mirrorInLandscape = CGAffineTransform(scaleX: -1, y: 1)
-            .translatedBy(x: CGFloat(dimensions.width), y: 0)
-        let frontTransform = rotationTransform.concatenating(mirrorInLandscape)
-
-        print("🔄 Writer transforms prepared (rotation applied, front mirrored)")
+        print("🔄 Rotation (degrees): \(normalizedRotation)")
+        print("🔄 Back Transform (Metadata): \(backTransform)")
+        print("🔄 Front Transform (Metadata): \(frontTransform)")
 
         print("🎬 Setting up writers with \(frameRate)fps, dimensions: \(dimensions.width)x\(dimensions.height)")
 
@@ -2738,4 +2749,3 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate, @un
     }
     */
 }
-
