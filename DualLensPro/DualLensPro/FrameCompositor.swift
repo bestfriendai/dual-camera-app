@@ -204,17 +204,23 @@ final class FrameCompositor: Sendable {
         let outputHeight = CGFloat(height)
         let halfHeight = outputHeight / 2
 
-        // The incoming buffers are already rotated, so we just scale and place them.
+        // Scale both images to fill their half of the screen
         let frontScaled = scaleToFit(image: frontImage, width: outputWidth, height: halfHeight)
         let backScaled = scaleToFit(image: backImage, width: outputWidth, height: halfHeight)
 
-        let frontPositioned = frontScaled.transformed(by: CGAffineTransform(translationX: 0, y: halfHeight))
-        let backPositioned = backScaled
+        // Position back camera on top, front camera on bottom
+        let backPositioned = backScaled.transformed(by: CGAffineTransform(translationX: 0, y: halfHeight))
+        let frontPositioned = frontScaled
 
-        let composed = frontPositioned.composited(over: backPositioned)
-
-        // ✅ FIX: Render with explicit bounds and color space to prevent green screen.
+        // Create a solid black background to render onto
         let outputRect = CGRect(x: 0, y: 0, width: width, height: height)
+        let background = CIImage(color: .black).cropped(to: outputRect)
+
+        // Composite the frames over the black background
+        let composed = frontPositioned
+            .composited(over: backPositioned)
+            .composited(over: background)
+
         context.render(composed, to: outputBuffer, bounds: outputRect, colorSpace: CGColorSpaceCreateDeviceRGB())
 
         return outputBuffer

@@ -89,10 +89,9 @@ class CameraViewModel: ObservableObject {
     private var isSettingUpCamera = false // Prevent duplicate setup calls
 
     init() {
-        // FORCE video mode for now to prevent crashes
-        // TODO: Re-enable UserDefaults loading after fixing mode switching
+        // Initialize with video mode as default
         currentCaptureMode = .video
-        print("📱 Forced VIDEO mode on init to prevent crashes")
+        print("📱 Initialized with VIDEO mode")
 
         // Check authorization status synchronously to avoid flashing permission view
         let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
