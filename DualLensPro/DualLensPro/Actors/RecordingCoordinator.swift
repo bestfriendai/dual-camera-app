@@ -257,56 +257,47 @@ actor RecordingCoordinator {
 
     // MARK: - Pixel Buffer Rotation
     /// Rotates and optionally mirrors a pixel buffer from landscape (1920x1080) to portrait (1080x1920)
+    /// Uses .oriented(.right) for standard 90-degree clockwise rotation
     private func rotateAndMirrorPixelBuffer(_ pixelBuffer: CVPixelBuffer, to dimensions: (width: Int, height: Int), mirror: Bool) -> CVPixelBuffer? {
         guard let context = ciContext else {
             print("❌ No CIContext for rotation")
             return nil
         }
 
-        // 1. Create CIImage from the landscape CVPixelBuffer
-        var ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        // 1. Create a CIImage from the original landscape pixel buffer.
+        let sourceImage = CIImage(cvPixelBuffer: pixelBuffer)
 
-        // 2. Apply a 90-degree CLOCKWISE rotation.
-        // .right corresponds to EXIF orientation 6, which is 90-deg CW.
-        // This correctly transforms the 1920x1080 (landscape) image
-        // to a 1080x1920 (portrait) image with its origin at (0,0).
-        ciImage = ciImage.oriented(.right)
+        // 2. ✅ FIX: Apply a simple and correct 90-degree CLOCKWISE rotation.
+        // The '.oriented(.right)' transform is the standard way to convert the camera's
+        // landscape buffer to a portrait orientation. This is equivalent to EXIF orientation 6.
+        var rotatedImage = sourceImage.oriented(.right)
 
-        // 3. Apply a horizontal mirror transform if required (for front camera)
+        // 3. ✅ FIX: If mirroring is required, apply a horizontal flip AFTER the rotation.
         if mirror {
-            // A mirror is a horizontal scale by -1.
-            // This must be translated back into bounds by the image's new width (1080).
-            let mirrorTransform = CGAffineTransform(scaleX: -1, y: 1)
-                .translatedBy(x: -ciImage.extent.width, y: 0)
-            ciImage = ciImage.transformed(by: mirrorTransform)
+            // The image is now in portrait, so we can apply a simple horizontal mirror.
+            rotatedImage = rotatedImage.transformed(by: CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: -rotatedImage.extent.width, y: 0))
         }
 
-        // 4. Create the output pixel buffer with PORTRAIT dimensions
+        // 4. Create the output pixel buffer with the correct PORTRAIT dimensions.
         var outputBuffer: CVPixelBuffer?
         let status = CVPixelBufferCreate(
             kCFAllocatorDefault,
             dimensions.width,  // e.g., 1080
             dimensions.height, // e.g., 1920
             kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-            [
-                kCVPixelBufferIOSurfacePropertiesKey: [:],
-                kCVPixelBufferMetalCompatibilityKey: true
-            ] as CFDictionary,
+            [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary,
             &outputBuffer
         )
 
-        guard status == kCVReturnSuccess, let output = outputBuffer else {
+        guard status == kCVReturnSuccess, let finalBuffer = outputBuffer else {
             print("❌ Failed to create rotated pixel buffer")
             return nil
         }
 
-        // 5. Render the correctly-rotated image into the output buffer
-        // The .oriented() image now has a correct extent of (0, 0, 1080, 1920),
-        // which perfectly matches the output buffer and rect.
-        let outputRect = CGRect(x: 0, y: 0, width: dimensions.width, height: dimensions.height)
-        context.render(ciImage, to: output, bounds: outputRect, colorSpace: CGColorSpaceCreateDeviceRGB())
+        // 5. Render the fully transformed image into the output buffer.
+        context.render(rotatedImage, to: finalBuffer)
 
-        return output
+        return finalBuffer
     }
 
     func appendFrontPixelBuffer(_ pixelBuffer: CVPixelBuffer, time: CMTime) throws {
