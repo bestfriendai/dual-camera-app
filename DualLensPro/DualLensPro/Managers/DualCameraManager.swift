@@ -1778,6 +1778,21 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         }
     }
 
+    private func assetWriterTransform(for rotationDegrees: Int, videoSize: CGSize) -> CGAffineTransform {
+        switch rotationDegrees {
+        case 90:
+            // Rotate 90° CCW after translating by height
+            return CGAffineTransform(translationX: videoSize.height, y: 0).rotated(by: .pi / 2)
+        case 180:
+            return CGAffineTransform(translationX: videoSize.width, y: videoSize.height).rotated(by: .pi)
+        case 270:
+            // Rotate 90° CW (−90°)
+            return CGAffineTransform(translationX: 0, y: videoSize.width).rotated(by: -.pi / 2)
+        default:
+            return .identity
+        }
+    }
+
     /// Update video orientation on all active connections
     @objc nonisolated private func deviceOrientationDidChange() {
         print("📱 Device orientation changed - updating video connections")
@@ -1865,59 +1880,78 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         let bitRate = recordingQuality.bitRate
         let frameRate = captureMode.frameRate  // ✅ Get dynamic frame rate from capture mode
 
-        // ✅ Ensure saved files are upright in portrait by applying writer input transforms
-        // The capture connections carry rotation metadata for preview, but the asset writer
-        // needs an explicit transform so the encoded tracks play back correctly.
-        let orientation = UIDevice.current.orientation
-
-        // ✅ HYBRID APPROACH: Individual videos use LANDSCAPE dimensions with metadata transforms
-        // Combined video uses PORTRAIT STACKED dimensions with manual pixel rotation
-        let dimensions: (width: Int, height: Int)
-        let combinedDimensions: (width: Int, height: Int)
-
-        // Individual videos: Use native LANDSCAPE dimensions (e.g., 1920x1080)
-        dimensions = (width: Int(baseDimensions.width), height: Int(baseDimensions.height))
-
-        // Combined video: Use PORTRAIT STACKED dimensions (e.g., 1080x3840)
-        // Width = landscape height (1080), Height = landscape width * 2 (1920 * 2 = 3840)
-        combinedDimensions = (width: Int(baseDimensions.height), height: Int(baseDimensions.width) * 2)
-
-        print("📱 Native Landscape Dimensions (individual videos): \(dimensions.width)x\(dimensions.height)")
-        print("📱 Combined Portrait Stacked Dimensions (merged video): \(combinedDimensions.width)x\(combinedDimensions.height)")
-
-        // ✅ Calculate transforms for writer metadata so saved videos match the live preview
-        let rawRotation = Int(videoRotationAngle())
-        let normalizedRotation = (rawRotation % 360 + 360) % 360
-        let videoSize = CGSize(width: CGFloat(dimensions.width), height: CGFloat(dimensions.height))
-
-        let backTransform: CGAffineTransform
-        switch normalizedRotation {
-        case 90:
-            // 90° clockwise (portrait)
-            backTransform = CGAffineTransform(translationX: 0, y: videoSize.width)
-                .rotated(by: -.pi / 2)
-        case 180:
-            backTransform = CGAffineTransform(translationX: videoSize.width, y: videoSize.height)
-                .rotated(by: .pi)
-        case 270:
-            // 270° clockwise == 90° counter-clockwise
-            backTransform = CGAffineTransform(translationX: videoSize.height, y: 0)
-                .rotated(by: .pi / 2)
-        default:
-            backTransform = .identity
+        // ✅ Align writer output with preview orientation using per-connection rotation data
+        func quantizedRotationDegrees(for angle: CGFloat) -> Int {
+            let options: [CGFloat] = [0, 90, 180, 270]
+            let nearest = options.min(by: { abs($0 - angle) < abs($1 - angle) }) ?? 90
+            return Int((Int(nearest) % 360 + 360) % 360)
         }
 
-        let rotatedWidth = (normalizedRotation == 90 || normalizedRotation == 270) ? videoSize.height : videoSize.width
-        var frontMirror = CGAffineTransform.identity
-        frontMirror = frontMirror.translatedBy(x: rotatedWidth, y: 0)
-        frontMirror = frontMirror.scaledBy(x: -1, y: 1)
-        let frontTransform = frontMirror.concatenating(backTransform)
+        func resolvedRotationDegrees(connectionAngle: CGFloat?, fallbackAngle: CGFloat) -> Int {
+            let fallbackDegrees = quantizedRotationDegrees(for: fallbackAngle)
+            guard let angle = connectionAngle else {
+                return fallbackDegrees
+            }
 
-        print("🔄 Rotation (degrees): \(normalizedRotation)")
-        print("🔄 Back Transform (Metadata): \(backTransform)")
-        print("🔄 Front Transform (Metadata): \(frontTransform)")
+            let connectionDegrees = quantizedRotationDegrees(for: angle)
+            let connectionIsPortrait = connectionDegrees == 90 || connectionDegrees == 270
+            let fallbackIsPortrait = fallbackDegrees == 90 || fallbackDegrees == 270
 
-        print("🎬 Setting up writers with \(frameRate)fps, dimensions: \(dimensions.width)x\(dimensions.height)")
+            if connectionIsPortrait {
+                return connectionDegrees
+            }
+
+            if fallbackIsPortrait {
+                return fallbackDegrees
+            }
+
+            return connectionDegrees
+        }
+
+        let fallbackAngle = videoRotationAngle()
+        let rawFrontAngle = frontVideoOutput?.connection(with: .video)?.videoRotationAngle
+        let rawBackAngle = backVideoOutput?.connection(with: .video)?.videoRotationAngle
+
+        let frontRotationDegrees = resolvedRotationDegrees(connectionAngle: rawFrontAngle, fallbackAngle: fallbackAngle)
+        let backRotationDegrees = resolvedRotationDegrees(connectionAngle: rawBackAngle, fallbackAngle: fallbackAngle)
+        let compositorRotationDegrees = frontRotationDegrees
+        let isPortraitOrientation = compositorRotationDegrees == 90 || compositorRotationDegrees == 270
+
+        // ✅ Capture actual sensor dimensions to avoid aspect ratio distortion
+        let defaultDimensions = (width: Int(baseDimensions.width), height: Int(baseDimensions.height))
+
+        func activeDimensions(for input: AVCaptureDeviceInput?) -> (width: Int, height: Int) {
+            guard let format = input?.device.activeFormat else {
+                return defaultDimensions
+            }
+            let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+            return (width: Int(dims.width), height: Int(dims.height))
+        }
+
+        let frontDimensions = activeDimensions(for: frontCameraInput)
+        let backDimensions = activeDimensions(for: backCameraInput)
+
+        let rotatedWidth = isPortraitOrientation ? Int(baseDimensions.height) : Int(baseDimensions.width)
+
+        // Combined track uses square crops stacked vertically to match preview layout
+        let squareSide = rotatedWidth
+        let combinedDimensions = (width: squareSide, height: squareSide * 2)
+
+        let orientation = UIDevice.current.orientation
+
+        print("📱 Front sensor dimensions: \(frontDimensions.width)x\(frontDimensions.height)")
+        print("📱 Back sensor dimensions: \(backDimensions.width)x\(backDimensions.height)")
+        print("📱 Combined video dimensions: \(combinedDimensions.width)x\(combinedDimensions.height)")
+        print("📱 Front rotation (degrees): \(frontRotationDegrees)")
+        print("📱 Back rotation (degrees): \(backRotationDegrees)")
+        print("📱 Rotation used for compositor: \(compositorRotationDegrees), portrait layout: \(isPortraitOrientation)")
+
+        let frontVideoSize = CGSize(width: CGFloat(frontDimensions.width), height: CGFloat(frontDimensions.height))
+        let backVideoSize = CGSize(width: CGFloat(backDimensions.width), height: CGFloat(backDimensions.height))
+        let backTransform = assetWriterTransform(for: backRotationDegrees, videoSize: backVideoSize)
+        let frontTransform = assetWriterTransform(for: frontRotationDegrees, videoSize: frontVideoSize)
+
+        print("🎬 Setting up writers with \(frameRate)fps")
 
         // Create the RecordingCoordinator actor
         let coordinator = RecordingCoordinator()
@@ -1928,13 +1962,19 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             frontURL: frontURL,
             backURL: backURL,
             combinedURL: combinedURL,
-            dimensions: dimensions,
+            frontDimensions: frontDimensions,
+            backDimensions: backDimensions,
             combinedDimensions: combinedDimensions,
             bitRate: bitRate,
             frameRate: frameRate,
-            frontTransform: frontTransform,  // ✅ Rotation + mirroring for front
-            backTransform: backTransform,    // ✅ Rotation only for back
-            deviceOrientation: orientation
+            frontTransform: frontTransform,
+            backTransform: backTransform,
+            frontRotationDegrees: frontRotationDegrees,
+            backRotationDegrees: backRotationDegrees,
+            rotationAngle: compositorRotationDegrees,
+            isPortrait: isPortraitOrientation,
+            deviceOrientation: orientation,
+            isFrontOnTop: isCamerasSwitched
         )
 
         print("✅ RecordingCoordinator configured and ready")

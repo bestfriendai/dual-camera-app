@@ -12,7 +12,6 @@ import AVFoundation
 import Metal
 import os.lock
 import UIKit
-import ImageIO
 
 /// Real-time compositor for creating stacked dual-camera frames
 /// Uses Core Image for GPU-accelerated composition
@@ -24,6 +23,9 @@ final class FrameCompositor: Sendable {
 
     // ✅ Device orientation tracking
     private let deviceOrientation: UIDeviceOrientation
+    private let rotationAngle: Int
+    private let isPortrait: Bool
+    private let isFrontOnTop: Bool
 
     // Thread-safe state - CVPixelBufferPool is thread-safe but not Sendable
     nonisolated(unsafe) private var pixelBufferPool: CVPixelBufferPool?
@@ -34,10 +36,20 @@ final class FrameCompositor: Sendable {
     nonisolated(unsafe) private var isShuttingDown = false
     nonisolated(unsafe) private var lastFrontBuffer: (buffer: CVPixelBuffer, time: CMTime)?
 
-    init(width: Int, height: Int, deviceOrientation: UIDeviceOrientation) {
+    init(
+        width: Int,
+        height: Int,
+        deviceOrientation: UIDeviceOrientation,
+        rotationAngle: Int,
+        isPortrait: Bool,
+        isFrontOnTop: Bool
+    ) {
         self.width = width
         self.height = height
         self.deviceOrientation = deviceOrientation
+        self.rotationAngle = rotationAngle
+        self.isPortrait = isPortrait
+        self.isFrontOnTop = isFrontOnTop
 
         // Use Metal for GPU acceleration
         let options: [CIContextOption: Any] = [
@@ -57,7 +69,7 @@ final class FrameCompositor: Sendable {
             print("⚠️ FrameCompositor using software rendering")
         }
 
-        print("✅ FrameCompositor initialized: \(width)x\(height), orientation: \(deviceOrientation.rawValue)")
+        print("✅ FrameCompositor initialized: \(width)x\(height), orientation: \(deviceOrientation.rawValue), rotation: \(rotationAngle)°, portrait layout: \(isPortrait)")
 
         // Create pixel buffer pool for efficient buffer reuse
         let poolAttributes: [String: Any] = [
@@ -190,28 +202,31 @@ final class FrameCompositor: Sendable {
             return nil
         }
 
-        let frontImage = orientImage(CIImage(cvPixelBuffer: front), isFrontCamera: true)
-        let backImage = orientImage(CIImage(cvPixelBuffer: back), isFrontCamera: false)
+        let frontImage = CIImage(cvPixelBuffer: front)
+        let backImage = CIImage(cvPixelBuffer: back)
 
         let outputWidth = CGFloat(width)
         let outputHeight = CGFloat(height)
-        let halfHeight = outputHeight / 2
-
-        // Scale both images to fill their half of the screen
-        let frontScaled = scaleToFit(image: frontImage, width: outputWidth, height: halfHeight)
-        let backScaled = scaleToFit(image: backImage, width: outputWidth, height: halfHeight)
-
-        // Position back camera on top, front camera on bottom
-        let backPositioned = backScaled.transformed(by: CGAffineTransform(translationX: 0, y: halfHeight))
-        let frontPositioned = frontScaled
-
-        // Create a solid black background to render onto
         let outputRect = CGRect(x: 0, y: 0, width: width, height: height)
         let background = CIImage(color: .black).cropped(to: outputRect)
 
-        // Composite the frames over the black background
-        let composed = frontPositioned
-            .composited(over: backPositioned)
+        let halfHeight = outputHeight / 2
+        let frontScaled = scaleToFit(image: frontImage, width: outputWidth, height: halfHeight)
+        let backScaled = scaleToFit(image: backImage, width: outputWidth, height: halfHeight)
+
+        let (topImage, bottomImage): (CIImage, CIImage) = {
+            if isFrontOnTop {
+                return (frontScaled, backScaled)
+            } else {
+                return (backScaled, frontScaled)
+            }
+        }()
+
+        let topPositioned = topImage.transformed(by: CGAffineTransform(translationX: 0, y: halfHeight))
+        let bottomPositioned = bottomImage
+
+        let composed = topPositioned
+            .composited(over: bottomPositioned)
             .composited(over: background)
 
         context.render(composed, to: outputBuffer, bounds: outputRect, colorSpace: CGColorSpaceCreateDeviceRGB())
@@ -249,8 +264,8 @@ final class FrameCompositor: Sendable {
         }
         
         // Create CIImages from pixel buffers
-        let frontImage = orientImage(CIImage(cvPixelBuffer: frontBuffer), isFrontCamera: true)
-        let backImage = orientImage(CIImage(cvPixelBuffer: backBuffer), isFrontCamera: false)
+        let frontImage = CIImage(cvPixelBuffer: frontBuffer)
+        let backImage = CIImage(cvPixelBuffer: backBuffer)
         
         // Calculate dimensions
         let outputWidth = CGFloat(width)
@@ -355,40 +370,6 @@ final class FrameCompositor: Sendable {
         return centeredImage.cropped(to: cropRect)
     }
 
-    /// ✅ Apply proper orientation to camera images
-    /// Rotates landscape buffers based on device orientation and mirrors front camera when needed
-    private func orientImage(_ image: CIImage, isFrontCamera: Bool) -> CIImage {
-        var oriented = image
-
-        let targetOrientation = mappedOrientation(for: deviceOrientation)
-        if targetOrientation != .up {
-            oriented = oriented.oriented(targetOrientation)
-        }
-
-        if isFrontCamera {
-            // Mirror horizontally by flipping X axis in portrait space
-            let transform = CGAffineTransform(scaleX: -1, y: 1)
-                .translatedBy(x: -oriented.extent.width, y: 0)
-            oriented = oriented.transformed(by: transform)
-        }
-
-        return oriented
-    }
-
-    private func mappedOrientation(for orientation: UIDeviceOrientation) -> CGImagePropertyOrientation {
-        switch orientation {
-        case .landscapeLeft:
-            return .down     // 180° rotation
-        case .landscapeRight:
-            return .up       // No rotation needed
-        case .portraitUpsideDown:
-            return .left     // 90° counter-clockwise
-        case .portrait, .faceUp, .faceDown, .unknown:
-            return .right    // 90° clockwise (default portrait handling)
-        @unknown default:
-            return .right
-        }
-    }
 }
 
 // MARK: - PiP Position

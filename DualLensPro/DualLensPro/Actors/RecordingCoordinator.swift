@@ -7,6 +7,7 @@
 //
 
 import AVFoundation
+import CoreImage
 import CoreMedia
 import Foundation
 import CoreVideo
@@ -67,22 +68,44 @@ actor RecordingCoordinator {
     private var lastBackAudioPTS: CMTime?
     private var lastCombinedAudioPTS: CMTime?
 
+    // MARK: - Orientation tracking
+    private var ciContext: CIContext?
+    private var frontRotationDegrees: Int = 90
+    private var backRotationDegrees: Int = 90
+    private var compositorRotationDegrees: Int = 90
+
     // MARK: - Configuration
     func configure(
         frontURL: URL,
         backURL: URL,
         combinedURL: URL,
-        dimensions: (width: Int, height: Int),
+        frontDimensions: (width: Int, height: Int),
+        backDimensions: (width: Int, height: Int),
         combinedDimensions: (width: Int, height: Int),
         bitRate: Int,
         frameRate: Int,
-        frontTransform: CGAffineTransform,  // We will now use these correctly
-        backTransform: CGAffineTransform,   //
-        deviceOrientation: UIDeviceOrientation
+        frontTransform: CGAffineTransform,
+        backTransform: CGAffineTransform,
+        frontRotationDegrees: Int,
+        backRotationDegrees: Int,
+        rotationAngle: Int,
+        isPortrait: Bool,
+        deviceOrientation: UIDeviceOrientation,
+        isFrontOnTop: Bool
     ) throws {
         print("🎬 RecordingCoordinator: Configuring (Hybrid Approach)...")
-        print("🎬 Source (Landscape) dimensions: \(dimensions.width)x\(dimensions.height)")
-        print("🎬 Combined (Portrait Stacked) dimensions: \(combinedDimensions.width)x\(combinedDimensions.height)")
+        print("🎬 Front dimensions: \(frontDimensions.width)x\(frontDimensions.height)")
+        print("🎬 Back dimensions: \(backDimensions.width)x\(backDimensions.height)")
+        print("🎬 Combined output dimensions: \(combinedDimensions.width)x\(combinedDimensions.height)")
+
+        self.frontRotationDegrees = ((frontRotationDegrees % 360) + 360) % 360
+        self.backRotationDegrees = ((backRotationDegrees % 360) + 360) % 360
+        self.compositorRotationDegrees = ((rotationAngle % 360) + 360) % 360
+
+        if ciContext == nil {
+            ciContext = CIContext(options: [.cacheIntermediates: false])
+            print("✅ CIContext initialized for pixel rotation")
+        }
 
         self.frontURL = frontURL
         self.backURL = backURL
@@ -92,11 +115,22 @@ actor RecordingCoordinator {
         backWriter = try AVAssetWriter(outputURL: backURL, fileType: .mov)
         combinedWriter = try AVAssetWriter(outputURL: combinedURL, fileType: .mov)
 
-        // ✅ FIX: Individual writers are configured with the SOURCE (landscape) dimensions.
-        let videoSettings: [String: Any] = [
+        // ✅ Individual writers are configured with the orientation-adjusted pixel dimensions.
+        let frontVideoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.hevc,
-            AVVideoWidthKey: dimensions.width,      // e.g., 1920
-            AVVideoHeightKey: dimensions.height,    // e.g., 1080
+            AVVideoWidthKey: frontDimensions.width,
+            AVVideoHeightKey: frontDimensions.height,
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: bitRate,
+                AVVideoExpectedSourceFrameRateKey: frameRate,
+                AVVideoMaxKeyFrameIntervalKey: frameRate
+            ]
+        ]
+
+        let backVideoSettings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.hevc,
+            AVVideoWidthKey: backDimensions.width,
+            AVVideoHeightKey: backDimensions.height,
             AVVideoCompressionPropertiesKey: [
                 AVVideoAverageBitRateKey: bitRate,
                 AVVideoExpectedSourceFrameRateKey: frameRate,
@@ -116,18 +150,17 @@ actor RecordingCoordinator {
             ]
         ]
 
-        // ✅ FIX: Apply the metadata transform for automatic rotation during playback.
-        frontVideoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        frontVideoInput = AVAssetWriterInput(mediaType: .video, outputSettings: frontVideoSettings)
         frontVideoInput?.expectsMediaDataInRealTime = true
-        frontVideoInput?.transform = frontTransform  // USE THE TRANSFORM
+        frontVideoInput?.transform = frontTransform
 
-        backVideoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        backVideoInput = AVAssetWriterInput(mediaType: .video, outputSettings: backVideoSettings)
         backVideoInput?.expectsMediaDataInRealTime = true
-        backVideoInput?.transform = backTransform    // USE THE TRANSFORM
+        backVideoInput?.transform = backTransform
 
         combinedVideoInput = AVAssetWriterInput(mediaType: .video, outputSettings: combinedVideoSettings)
         combinedVideoInput?.expectsMediaDataInRealTime = true
-        combinedVideoInput?.transform = .identity // No transform needed here
+        combinedVideoInput?.transform = .identity
 
         let audioSettings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
@@ -143,11 +176,18 @@ actor RecordingCoordinator {
         combinedAudioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
         combinedAudioInput?.expectsMediaDataInRealTime = true
 
-        // ✅ FIX: Adaptors for individual writers must expect SOURCE (landscape) pixel buffers.
-        let pixelBufferAttributes: [String: Any] = [
+        // ✅ Pixel buffer adaptors consume source buffers straight from the camera (bi-planar 420).
+        let frontPixelBufferAttributes: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
-            kCVPixelBufferWidthKey as String: dimensions.width,
-            kCVPixelBufferHeightKey as String: dimensions.height,
+            kCVPixelBufferWidthKey as String: frontDimensions.width,
+            kCVPixelBufferHeightKey as String: frontDimensions.height,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:]
+        ]
+
+        let backPixelBufferAttributes: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
+            kCVPixelBufferWidthKey as String: backDimensions.width,
+            kCVPixelBufferHeightKey as String: backDimensions.height,
             kCVPixelBufferIOSurfacePropertiesKey as String: [:]
         ]
 
@@ -161,7 +201,10 @@ actor RecordingCoordinator {
         if let videoInput = frontVideoInput, let writer = frontWriter {
             if writer.canAdd(videoInput) {
                 writer.add(videoInput)
-                frontPixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: videoInput, sourcePixelBufferAttributes: pixelBufferAttributes)
+                frontPixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
+                    assetWriterInput: videoInput,
+                    sourcePixelBufferAttributes: frontPixelBufferAttributes
+                )
             }
             if let audioInput = frontAudioInput, writer.canAdd(audioInput) { writer.add(audioInput) }
         }
@@ -169,7 +212,10 @@ actor RecordingCoordinator {
         if let videoInput = backVideoInput, let writer = backWriter {
             if writer.canAdd(videoInput) {
                 writer.add(videoInput)
-                backPixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: videoInput, sourcePixelBufferAttributes: pixelBufferAttributes)
+                backPixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
+                    assetWriterInput: videoInput,
+                    sourcePixelBufferAttributes: backPixelBufferAttributes
+                )
             }
             if let audioInput = backAudioInput, writer.canAdd(audioInput) { writer.add(audioInput) }
         }
@@ -186,7 +232,10 @@ actor RecordingCoordinator {
         compositor = FrameCompositor(
             width: combinedDimensions.width,
             height: combinedDimensions.height,
-            deviceOrientation: deviceOrientation
+            deviceOrientation: deviceOrientation,
+            rotationAngle: compositorRotationDegrees,
+            isPortrait: isPortrait,
+            isFrontOnTop: isFrontOnTop
         )
         print("✅ FrameCompositor initialized for combined output with orientation: \(deviceOrientation.rawValue)")
 
@@ -242,8 +291,6 @@ actor RecordingCoordinator {
     func appendFrontPixelBuffer(_ pixelBuffer: CVPixelBuffer, time: CMTime) throws {
         guard isWriting else { return }
 
-        // 1. ✅ FIX: Append the ORIGINAL (landscape) buffer to the front writer.
-        // The metadata transform will handle rotation. This fixes the green screen.
         if let adaptor = frontPixelBufferAdaptor,
            let input = frontVideoInput,
            input.isReadyForMoreMediaData {
@@ -255,15 +302,18 @@ actor RecordingCoordinator {
             }
         }
 
-        // Cache the most recent front buffer for the combined video compositor.
-        lastFrontBuffer = (buffer: pixelBuffer, time: time)
+        guard let rotatedBuffer = rotateAndMirrorPixelBuffer(pixelBuffer, rotationDegrees: frontRotationDegrees, mirror: true) else {
+            print("⚠️ Failed to rotate front buffer for compositor")
+            return
+        }
+
+        // Cache a portrait-oriented, mirrored copy for the combined video compositor.
+        lastFrontBuffer = (buffer: rotatedBuffer, time: time)
     }
 
     func appendBackPixelBuffer(_ pixelBuffer: CVPixelBuffer, time: CMTime) async throws {
         guard isWriting else { return }
 
-        // 1. ✅ FIX: Append the ORIGINAL (landscape) buffer to the back writer.
-        // The metadata transform will handle rotation. This fixes the sideways video.
         if let adaptor = backPixelBufferAdaptor,
            let input = backVideoInput,
            input.isReadyForMoreMediaData {
@@ -275,12 +325,17 @@ actor RecordingCoordinator {
             }
         }
 
-        // Create the stacked composition using the most recent buffers.
+        guard let rotatedBuffer = rotateAndMirrorPixelBuffer(pixelBuffer, rotationDegrees: backRotationDegrees, mirror: false) else {
+            print("⚠️ Failed to rotate back buffer for compositor")
+            return
+        }
+
+        // Create the stacked composition using the most recent oriented buffers.
         if let adaptor = combinedPixelBufferAdaptor,
            let input = combinedVideoInput,
            input.isReadyForMoreMediaData,
            let compositor = compositor {
-            if let composedBuffer = compositor.stacked(front: lastFrontBuffer?.buffer, back: pixelBuffer) {
+            if let composedBuffer = compositor.stacked(front: lastFrontBuffer?.buffer, back: rotatedBuffer) {
                 let ok2 = adaptor.append(composedBuffer, withPresentationTime: time)
                 if ok2 {
                     lastCombinedVideoPTS = time
@@ -291,6 +346,70 @@ actor RecordingCoordinator {
                 print("⚠️ Failed to compose frame at \(time.seconds)s")
             }
         }
+    }
+
+    // MARK: - Pixel Buffer Rotation
+    private func rotateAndMirrorPixelBuffer(_ pixelBuffer: CVPixelBuffer, rotationDegrees: Int, mirror: Bool) -> CVPixelBuffer? {
+        guard let context = ciContext else {
+            print("❌ No CIContext for rotation")
+            return nil
+        }
+
+        let sourceWidth = CVPixelBufferGetWidth(pixelBuffer)
+        let sourceHeight = CVPixelBufferGetHeight(pixelBuffer)
+        let normalizedRotation = ((rotationDegrees % 360) + 360) % 360
+        let isPortraitRotation = normalizedRotation == 90 || normalizedRotation == 270
+        let targetWidth = isPortraitRotation ? sourceHeight : sourceWidth
+        let targetHeight = isPortraitRotation ? sourceWidth : sourceHeight
+
+        var image = CIImage(cvPixelBuffer: pixelBuffer)
+
+        switch normalizedRotation {
+        case 90:
+            image = image.oriented(.right)
+        case 180:
+            image = image.oriented(.down)
+        case 270:
+            image = image.oriented(.left)
+        default:
+            break
+        }
+
+        if mirror {
+            let transform = CGAffineTransform(scaleX: -1, y: 1)
+                .translatedBy(x: -image.extent.width, y: 0)
+            image = image.transformed(by: transform)
+        }
+
+        let pixelBufferAttributes: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
+            kCVPixelBufferWidthKey as String: targetWidth,
+            kCVPixelBufferHeightKey as String: targetHeight,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:]
+        ]
+
+        var outputBuffer: CVPixelBuffer?
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            targetWidth,
+            targetHeight,
+            kCVPixelFormatType_32BGRA,
+            pixelBufferAttributes as CFDictionary,
+            &outputBuffer
+        )
+
+        guard status == kCVReturnSuccess, let finalBuffer = outputBuffer else {
+            print("❌ Failed to create rotated pixel buffer (status: \(status))")
+            return nil
+        }
+
+        let bounds = CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        CVPixelBufferLockBaseAddress(finalBuffer, [])
+        context.render(image, to: finalBuffer, bounds: bounds, colorSpace: colorSpace)
+        CVPixelBufferUnlockBaseAddress(finalBuffer, [])
+
+        return finalBuffer
     }
 
     func appendAudioSample(_ sampleBuffer: CMSampleBuffer) throws {
