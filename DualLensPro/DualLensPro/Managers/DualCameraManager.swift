@@ -1265,7 +1265,7 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         if isPortrait {
             frontOriented = frontOriented.oriented(.right)
             backOriented = backOriented.oriented(.right)
-            print("🔄 Rotated photo images 90° for portrait mode")
+            print("🔄 Rotated photo images 90° clockwise for portrait mode")
         }
 
         // Mirror front camera (selfie effect)
@@ -1778,19 +1778,28 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         }
     }
 
-    private func assetWriterTransform(for rotationDegrees: Int, videoSize: CGSize) -> CGAffineTransform {
-        switch rotationDegrees {
+    private func assetWriterTransform(for rotationDegrees: Int, mirror: Bool) -> CGAffineTransform {
+        let normalized = ((rotationDegrees % 360) + 360) % 360
+        let radians: CGFloat
+
+        switch normalized {
         case 90:
-            // Rotate 90° CCW after translating by height
-            return CGAffineTransform(translationX: videoSize.height, y: 0).rotated(by: .pi / 2)
+            radians = -.pi / 2   // 90° clockwise (portrait up)
         case 180:
-            return CGAffineTransform(translationX: videoSize.width, y: videoSize.height).rotated(by: .pi)
+            radians = .pi        // 180°
         case 270:
-            // Rotate 90° CW (−90°)
-            return CGAffineTransform(translationX: 0, y: videoSize.width).rotated(by: -.pi / 2)
+            radians = .pi / 2    // 90° counter-clockwise (portrait upside-down)
         default:
-            return .identity
+            radians = 0
         }
+
+        var transform = CGAffineTransform(rotationAngle: radians)
+
+        if mirror {
+            transform = transform.scaledBy(x: -1, y: 1)
+        }
+
+        return transform
     }
 
     /// Update video orientation on all active connections
@@ -1815,22 +1824,28 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
 
                 let angle = self.videoRotationAngle()
 
+                // ✅ CRITICAL FIX: Set rotation on video connections to physically rotate buffers
+                // This is the CORRECT approach per Apple documentation:
+                // - Front camera native: LandscapeLeft
+                // - Back camera native: LandscapeRight (180° opposite)
+                // - Setting videoRotationAngle physically rotates buffers BEFORE writing
+                // - This eliminates need for transform metadata on individual videos
                 // Update front video output connection
                 if let frontOutput = self.frontVideoOutput,
                    let connection = frontOutput.connection(with: .video) {
                     if connection.isVideoRotationAngleSupported(angle) {
-                        connection.videoRotationAngle = angle
+                        connection.videoRotationAngle = angle  // Physically rotate to portrait
                     }
-                    print("✅ Updated front video rotation to \(angle)°")
+                    print("✅ Front video connection set to \(angle)° (physically rotates buffers)")
                 }
 
                 // Update back video output connection
                 if let backOutput = self.backVideoOutput,
                    let connection = backOutput.connection(with: .video) {
                     if connection.isVideoRotationAngleSupported(angle) {
-                        connection.videoRotationAngle = angle
+                        connection.videoRotationAngle = angle  // Physically rotate to portrait
                     }
-                    print("✅ Updated back video rotation to \(angle)°")
+                    print("✅ Back video connection set to \(angle)° (physically rotates buffers)")
                 }
 
                 // Update front photo output connection
@@ -1880,42 +1895,45 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         let bitRate = recordingQuality.bitRate
         let frameRate = captureMode.frameRate  // ✅ Get dynamic frame rate from capture mode
 
-        // ✅ Align writer output with preview orientation using per-connection rotation data
-        func quantizedRotationDegrees(for angle: CGFloat) -> Int {
-            let options: [CGFloat] = [0, 90, 180, 270]
-            let nearest = options.min(by: { abs($0 - angle) < abs($1 - angle) }) ?? 90
-            return Int((Int(nearest) % 360 + 360) % 360)
+        func rotationDegrees(for orientation: UIDeviceOrientation) -> Int {
+            switch orientation {
+            case .portrait, .unknown, .faceUp, .faceDown:
+                return 90
+            case .portraitUpsideDown:
+                return 270
+            case .landscapeLeft:
+                return 0
+            case .landscapeRight:
+                return 180
+            @unknown default:
+                return 90
+            }
         }
 
-        func resolvedRotationDegrees(connectionAngle: CGFloat?, fallbackAngle: CGFloat) -> Int {
-            let fallbackDegrees = quantizedRotationDegrees(for: fallbackAngle)
-            guard let angle = connectionAngle else {
-                return fallbackDegrees
-            }
+        let orientation = UIDevice.current.orientation
+        var rotationDegrees = rotationDegrees(for: orientation)
 
-            let connectionDegrees = quantizedRotationDegrees(for: angle)
-            let connectionIsPortrait = connectionDegrees == 90 || connectionDegrees == 270
-            let fallbackIsPortrait = fallbackDegrees == 90 || fallbackDegrees == 270
-
-            if connectionIsPortrait {
-                return connectionDegrees
-            }
-
-            if fallbackIsPortrait {
-                return fallbackDegrees
-            }
-
-            return connectionDegrees
+        // If we somehow end up with a landscape value, fall back to portrait to avoid sideways exports.
+        if rotationDegrees == 0 || rotationDegrees == 180 {
+            print("⚠️ Landscape rotation detected (\(rotationDegrees)°) - defaulting to portrait (90°)")
+            rotationDegrees = 90
         }
 
-        let fallbackAngle = videoRotationAngle()
-        let rawFrontAngle = frontVideoOutput?.connection(with: .video)?.videoRotationAngle
-        let rawBackAngle = backVideoOutput?.connection(with: .video)?.videoRotationAngle
+        // ✅ CRITICAL FIX: Buffers are now physically rotated by videoRotationAngle on connections
+        // - Front camera: videoRotationAngle = 90° (physically rotates LandscapeLeft → Portrait)
+        // - Back camera: videoRotationAngle = 90° (physically rotates LandscapeRight → Portrait)
+        // - Individual videos: NO transform needed (buffers already rotated)
+        // - Merged video: NO pixel rotation needed (buffers already rotated)
+        let frontRotationDegrees = 0  // No rotation needed - already rotated by connection
+        let backRotationDegrees = 0   // No rotation needed - already rotated by connection
+        let compositorRotationDegrees = rotationDegrees
+        let portraitAngles: Set<Int> = [90, 270]
+        let isPortraitOrientation = portraitAngles.contains(compositorRotationDegrees)
 
-        let frontRotationDegrees = resolvedRotationDegrees(connectionAngle: rawFrontAngle, fallbackAngle: fallbackAngle)
-        let backRotationDegrees = resolvedRotationDegrees(connectionAngle: rawBackAngle, fallbackAngle: fallbackAngle)
-        let compositorRotationDegrees = frontRotationDegrees
-        let isPortraitOrientation = compositorRotationDegrees == 90 || compositorRotationDegrees == 270
+        // ✅ Individual videos: No transform needed (buffers already physically rotated)
+        // ✅ Combined video: No pixel rotation needed (buffers already physically rotated)
+        let frontTransformRotation = 0  // Identity transform
+        let backTransformRotation = 0   // Identity transform
 
         // ✅ Capture actual sensor dimensions to avoid aspect ratio distortion
         let defaultDimensions = (width: Int(baseDimensions.width), height: Int(baseDimensions.height))
@@ -1931,25 +1949,35 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         let frontDimensions = activeDimensions(for: frontCameraInput)
         let backDimensions = activeDimensions(for: backCameraInput)
 
+        // ✅ CRITICAL FIX: When using videoRotationAngle to physically rotate buffers,
+        // we must swap width/height dimensions for the AVAssetWriter to match the rotated buffers
+        // - Native sensor: 1920x1080 (landscape)
+        // - After videoRotationAngle = 90°: buffers are 1080x1920 (portrait)
+        // - AVAssetWriter must be configured with 1080x1920 to match!
+        let frontDimensionsRotated = isPortraitOrientation ?
+            (width: frontDimensions.height, height: frontDimensions.width) : frontDimensions
+        let backDimensionsRotated = isPortraitOrientation ?
+            (width: backDimensions.height, height: backDimensions.width) : backDimensions
+
         let rotatedWidth = isPortraitOrientation ? Int(baseDimensions.height) : Int(baseDimensions.width)
 
         // Combined track uses square crops stacked vertically to match preview layout
         let squareSide = rotatedWidth
         let combinedDimensions = (width: squareSide, height: squareSide * 2)
 
-        let orientation = UIDevice.current.orientation
-
-        print("📱 Front sensor dimensions: \(frontDimensions.width)x\(frontDimensions.height)")
-        print("📱 Back sensor dimensions: \(backDimensions.width)x\(backDimensions.height)")
+        print("📱 Front sensor dimensions (native): \(frontDimensions.width)x\(frontDimensions.height)")
+        print("📱 Back sensor dimensions (native): \(backDimensions.width)x\(backDimensions.height)")
+        print("📱 Front video dimensions (rotated): \(frontDimensionsRotated.width)x\(frontDimensionsRotated.height)")
+        print("📱 Back video dimensions (rotated): \(backDimensionsRotated.width)x\(backDimensionsRotated.height)")
         print("📱 Combined video dimensions: \(combinedDimensions.width)x\(combinedDimensions.height)")
         print("📱 Front rotation (degrees): \(frontRotationDegrees)")
         print("📱 Back rotation (degrees): \(backRotationDegrees)")
+        print("📱 Front transform rotation: \(frontTransformRotation)")
+        print("📱 Back transform rotation: \(backTransformRotation)")
         print("📱 Rotation used for compositor: \(compositorRotationDegrees), portrait layout: \(isPortraitOrientation)")
 
-        let frontVideoSize = CGSize(width: CGFloat(frontDimensions.width), height: CGFloat(frontDimensions.height))
-        let backVideoSize = CGSize(width: CGFloat(backDimensions.width), height: CGFloat(backDimensions.height))
-        let backTransform = assetWriterTransform(for: backRotationDegrees, videoSize: backVideoSize)
-        let frontTransform = assetWriterTransform(for: frontRotationDegrees, videoSize: frontVideoSize)
+        let frontTransform = assetWriterTransform(for: frontTransformRotation, mirror: true)
+        let backTransform = assetWriterTransform(for: backTransformRotation, mirror: false)
 
         print("🎬 Setting up writers with \(frameRate)fps")
 
@@ -1962,8 +1990,8 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             frontURL: frontURL,
             backURL: backURL,
             combinedURL: combinedURL,
-            frontDimensions: frontDimensions,
-            backDimensions: backDimensions,
+            frontDimensions: frontDimensionsRotated,
+            backDimensions: backDimensionsRotated,
             combinedDimensions: combinedDimensions,
             bitRate: bitRate,
             frameRate: frameRate,

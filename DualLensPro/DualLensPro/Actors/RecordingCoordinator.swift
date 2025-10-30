@@ -291,6 +291,9 @@ actor RecordingCoordinator {
     func appendFrontPixelBuffer(_ pixelBuffer: CVPixelBuffer, time: CMTime) throws {
         guard isWriting else { return }
 
+        let originalWidth = CVPixelBufferGetWidth(pixelBuffer)
+        let originalHeight = CVPixelBufferGetHeight(pixelBuffer)
+
         if let adaptor = frontPixelBufferAdaptor,
            let input = frontVideoInput,
            input.isReadyForMoreMediaData {
@@ -307,12 +310,22 @@ actor RecordingCoordinator {
             return
         }
 
+        let rotatedWidth = CVPixelBufferGetWidth(rotatedBuffer)
+        let rotatedHeight = CVPixelBufferGetHeight(rotatedBuffer)
+
+        if lastFrontBuffer == nil {
+            print("📐 Front buffer: \(originalWidth)x\(originalHeight) → \(rotatedWidth)x\(rotatedHeight) (rotation: \(frontRotationDegrees)°)")
+        }
+
         // Cache a portrait-oriented, mirrored copy for the combined video compositor.
         lastFrontBuffer = (buffer: rotatedBuffer, time: time)
     }
 
     func appendBackPixelBuffer(_ pixelBuffer: CVPixelBuffer, time: CMTime) async throws {
         guard isWriting else { return }
+
+        let originalWidth = CVPixelBufferGetWidth(pixelBuffer)
+        let originalHeight = CVPixelBufferGetHeight(pixelBuffer)
 
         if let adaptor = backPixelBufferAdaptor,
            let input = backVideoInput,
@@ -328,6 +341,13 @@ actor RecordingCoordinator {
         guard let rotatedBuffer = rotateAndMirrorPixelBuffer(pixelBuffer, rotationDegrees: backRotationDegrees, mirror: false) else {
             print("⚠️ Failed to rotate back buffer for compositor")
             return
+        }
+
+        let rotatedWidth = CVPixelBufferGetWidth(rotatedBuffer)
+        let rotatedHeight = CVPixelBufferGetHeight(rotatedBuffer)
+
+        if lastBackVideoPTS == nil {
+            print("📐 Back buffer: \(originalWidth)x\(originalHeight) → \(rotatedWidth)x\(rotatedHeight) (rotation: \(backRotationDegrees)°)")
         }
 
         // Create the stacked composition using the most recent oriented buffers.
