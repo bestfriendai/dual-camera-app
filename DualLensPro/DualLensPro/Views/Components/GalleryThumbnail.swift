@@ -13,6 +13,7 @@ struct GalleryThumbnail: View {
 
     @State private var thumbnailImage: UIImage?
     @State private var isPressed = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: {
@@ -49,7 +50,7 @@ struct GalleryThumbnail: View {
                 .onChanged { _ in isPressed = true }
                 .onEnded { _ in isPressed = false }
         )
-        .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isPressed)
+        .animation(reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.7), value: isPressed)
         .onAppear {
             loadLatestPhoto()
         }
@@ -57,6 +58,9 @@ struct GalleryThumbnail: View {
             print("🔄 Refreshing gallery thumbnail")
             loadLatestPhoto()
         }
+        .accessibilityLabel("Photo library")
+        .accessibilityHint("Double tap to open your photo library")
+        .accessibilityValue(thumbnailImage != nil ? "Shows recent photo" : "No photos")
     }
 
     private func loadLatestPhoto() {

@@ -10,6 +10,21 @@ import SwiftUI
 struct ModeSelector: View {
     @Binding var selectedMode: CaptureMode
     var isPremium: Bool = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private func accessibilityTraitsFor(mode: CaptureMode) -> AccessibilityTraits {
+        selectedMode == mode ? .isSelected : []
+    }
+
+    private func accessibilityValueFor(mode: CaptureMode) -> String {
+        if mode.requiresPremium && !isPremium {
+            return "Requires premium"
+        } else if selectedMode == mode {
+            return "Selected"
+        } else {
+            return "Not selected"
+        }
+    }
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -17,8 +32,12 @@ struct ModeSelector: View {
                 ForEach(CaptureMode.allCases) { mode in
                     Button(action: {
                         HapticManager.shared.modeChange()
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        if reduceMotion {
                             selectedMode = mode
+                        } else {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                selectedMode = mode
+                            }
                         }
                     }) {
                         HStack(spacing: 6) {
@@ -46,11 +65,17 @@ struct ModeSelector: View {
                         }
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .accessibilityLabel("\(mode.displayName) mode")
+                    .accessibilityHint("Double tap to select \(mode.displayName) capture mode")
+                    .accessibilityAddTraits(accessibilityTraitsFor(mode: mode))
+                    .accessibilityValue(accessibilityValueFor(mode: mode))
                 }
             }
             .padding(.horizontal, 24)
         }
         .frame(height: 50)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Capture mode selector")
     }
 }
 

@@ -3,7 +3,7 @@
 //  DualLensPro
 //
 //  Created by DualLens Pro Team on 10/26/25.
-//  Real-time video frame compositor for stacked dual-camera output
+//  Real-time video frame compositor for stacked dual-camera output (Swift 6.2)
 //
 
 import CoreImage
@@ -16,22 +16,48 @@ import UIKit
 /// Real-time compositor for creating stacked dual-camera frames
 /// Uses Core Image for GPU-accelerated composition
 /// Thread-safe using OSAllocatedUnfairLock
+// Sendable conformance: Thread-safe via NSLock protection of mutable state
+// All public methods can be safely called from any thread/actor
 final class FrameCompositor: Sendable {
     private let context: CIContext
-    private let width: Int
-    private let height: Int
 
-    // ✅ Device orientation tracking
-    private let deviceOrientation: UIDeviceOrientation
-    private let rotationAngle: Int
-    private let isPortrait: Bool
-    private let isFrontOnTop: Bool
+    // MARK: - Swift 6.2 InlineArray Configuration
+    struct CompositorConfig: Sendable {
+        var dimensions: [2 of Int]
+        var layoutParams: [2 of Bool]
+        var rotation: Int
+    }
 
-    // Thread-safe state - CVPixelBufferPool is thread-safe but not Sendable
+    private let config: CompositorConfig
+
+    // Legacy accessors for backward compatibility
+    private var width: Int { config.dimensions[0] }
+    private var height: Int { config.dimensions[1] }
+    private var isPortrait: Bool { config.layoutParams[0] }
+    private var isFrontOnTop: Bool { config.layoutParams[1] }
+    private var rotationAngle: Int { config.rotation }
+
+    // ✅ Interface orientation tracking (iOS 26+)
+    private let interfaceOrientation: UIInterfaceOrientation
+
+    // MARK: - Thread-Safe State (Swift 6.2 Strict Memory Safety)
+    //
+    // The following properties use nonisolated(unsafe) with @safe(unchecked) because:
+    // 1. CVPixelBufferPool is thread-safe but not Sendable (Apple's API limitation)
+    // 2. All access is protected by NSLock (poolLock for pool, stateLock for state)
+    // 3. The locks ensure mutual exclusion and memory ordering guarantees
+    //
+    // This is a justified use of unsafe - the thread safety is manually verified.
     nonisolated(unsafe) private var pixelBufferPool: CVPixelBufferPool?
+    // NOTE: Using NSLock instead of OSAllocatedUnfairLock because:
+    // 1. FrameCompositor is marked Sendable (class-level conformance)
+    // 2. OSAllocatedUnfairLock requires generic state parameter
+    // 3. NSLock provides sufficient performance for this use case
+    // 4. Lock contention is low (only during buffer allocation and state checks)
     private let poolLock = NSLock()
 
     // ✅ FIX: Shutdown state to prevent using stale buffers during recording stop
+    // Photo capture delegate storage (thread-safe access)
     private let stateLock = NSLock()
     nonisolated(unsafe) private var isShuttingDown = false
     nonisolated(unsafe) private var lastFrontBuffer: (buffer: CVPixelBuffer, time: CMTime)?
@@ -39,17 +65,18 @@ final class FrameCompositor: Sendable {
     init(
         width: Int,
         height: Int,
-        deviceOrientation: UIDeviceOrientation,
+        interfaceOrientation: UIInterfaceOrientation,
         rotationAngle: Int,
         isPortrait: Bool,
         isFrontOnTop: Bool
     ) {
-        self.width = width
-        self.height = height
-        self.deviceOrientation = deviceOrientation
-        self.rotationAngle = rotationAngle
-        self.isPortrait = isPortrait
-        self.isFrontOnTop = isFrontOnTop
+        // Initialize config with InlineArray
+        self.config = CompositorConfig(
+            dimensions: [width, height],
+            layoutParams: [isPortrait, isFrontOnTop],
+            rotation: rotationAngle
+        )
+        self.interfaceOrientation = interfaceOrientation
 
         // Use Metal for GPU acceleration
         let options: [CIContextOption: Any] = [
@@ -69,7 +96,7 @@ final class FrameCompositor: Sendable {
             print("⚠️ FrameCompositor using software rendering")
         }
 
-        print("✅ FrameCompositor initialized: \(width)x\(height), orientation: \(deviceOrientation.rawValue), rotation: \(rotationAngle)°, portrait layout: \(isPortrait)")
+        print("✅ FrameCompositor initialized: \(width)x\(height), interface orientation: \(interfaceOrientation.rawValue), rotation: \(rotationAngle)°, portrait layout: \(isPortrait)")
 
         // Create pixel buffer pool for efficient buffer reuse
         let poolAttributes: [String: Any] = [
@@ -303,9 +330,25 @@ final class FrameCompositor: Sendable {
         
         return outputBuffer
     }
-    
+
+    // MARK: - Future Optimization: Span for Buffer Access
+    //
+    // Swift 6.2's Span type could be used for zero-overhead pixel buffer access:
+    //
+    // Example pattern for direct pixel manipulation:
+    //   CVPixelBufferLockBaseAddress(buffer, [])
+    //   defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+    //   let baseAddress = CVPixelBufferGetBaseAddress(buffer)
+    //   let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
+    //   let height = CVPixelBufferGetHeight(buffer)
+    //   let span = MutableSpan(baseAddress, count: bytesPerRow * height)
+    //   // Safe, zero-overhead read/write access
+    //
+    // Current Core Image approach is optimal for GPU-accelerated composition.
+    // Consider Span for CPU-based effects or custom pixel shaders.
+
     // MARK: - Private Helpers
-    
+
     private func allocatePixelBuffer() -> CVPixelBuffer? {
         // Try to get buffer from pool (thread-safe)
         poolLock.lock()

@@ -74,6 +74,8 @@ struct ControlPanel: View {
                         .foregroundStyle(.white)
                         .frame(width: 44, height: 44)
                 }
+                .accessibilityLabel("Switch cameras")
+                .accessibilityHint("Double tap to swap front and back camera positions")
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .padding(.horizontal, 24)

@@ -331,7 +331,7 @@ actor HighFrameRateCapture {
 
 **For iPhone 15 Pro Action Mode** (2.8K 60fps stabilization):
 ```swift
-// Note: Action Mode is NOT available via public API as of iOS 18
+// Note: Action Mode is NOT available via public API as of iOS 26
 // It's only accessible in the native Camera app
 // For your app, implement standard video stabilization:
 
@@ -1127,7 +1127,7 @@ func monitorMemoryPressure() {
 
 External SSD recording reduces heat by eliminating internal storage writes. Recommended SSDs: SanDisk Extreme Pro (1050 MB/s), Samsung T7/T9, any USB 3.2 Gen 2 drive with 220+ MB/s write speed formatted as exFAT.
 
-**Action Mode stabilization** (2.8K 60fps) is **not available via public API** as of iOS 18—only accessible in native Camera app. For your app, implement standard `.cinematic` video stabilization mode, which provides excellent results albeit not Action Mode's extreme stabilization. Document this limitation clearly to avoid user disappointment.
+**Action Mode stabilization** (2.8K 60fps) is **not available via public API** as of iOS 26—only accessible in native Camera app. For your app, implement standard `.cinematic` video stabilization mode, which provides excellent results albeit not Action Mode's extreme stabilization. Document this limitation clearly to avoid user disappointment.
 
 ## App Store requirements: zero-crash mandate
 

@@ -3,7 +3,7 @@
 //  DualLensPro
 //
 //  Created by DualLens Pro Team on 10/26/25.
-//  PRODUCTION READY - Swift 6 Actor-based thread-safe recording
+//  PRODUCTION READY - Swift 6.2 Actor-based thread-safe recording with InlineArray metadata
 //
 
 import AVFoundation
@@ -74,6 +74,19 @@ actor RecordingCoordinator {
     private var backRotationDegrees: Int = 90
     private var compositorRotationDegrees: Int = 90
 
+    // MARK: - Swift 6.2 InlineArray for Frame Metadata
+    struct FrameMetadata: Sendable {
+        var timestamps: [6 of CMTime] = [.zero, .zero, .zero, .zero, .zero, .zero]
+        var rotationAngles: [3 of Int] = [90, 90, 90]
+        var dimensions: [6 of Int] = [0, 0, 0, 0, 0, 0]
+    }
+
+    private var frameMetadata = FrameMetadata()
+
+    // Performance measurement infrastructure
+    private var performanceClock = ContinuousClock()
+    private var frameProcessingTimes: [Duration] = []
+
     // MARK: - Configuration
     func configure(
         frontURL: URL,
@@ -90,17 +103,33 @@ actor RecordingCoordinator {
         backRotationDegrees: Int,
         rotationAngle: Int,
         isPortrait: Bool,
-        deviceOrientation: UIDeviceOrientation,
+        interfaceOrientation: UIInterfaceOrientation,
         isFrontOnTop: Bool
     ) throws {
-        print("🎬 RecordingCoordinator: Configuring (Hybrid Approach)...")
+        print("🎬 RecordingCoordinator: Configuring (Hybrid Approach - iOS 26)...")
         print("🎬 Front dimensions: \(frontDimensions.width)x\(frontDimensions.height)")
         print("🎬 Back dimensions: \(backDimensions.width)x\(backDimensions.height)")
         print("🎬 Combined output dimensions: \(combinedDimensions.width)x\(combinedDimensions.height)")
 
+        // NOTE: iOS 26 Cinematic Video metadata is automatically captured by AVFoundation
+        // when cinematicVideoCaptureEnabled is true on the capture device. No special
+        // handling is required in RecordingCoordinator - depth maps and focus tracking
+        // data are embedded in the video file by the system.
+
         self.frontRotationDegrees = ((frontRotationDegrees % 360) + 360) % 360
         self.backRotationDegrees = ((backRotationDegrees % 360) + 360) % 360
         self.compositorRotationDegrees = ((rotationAngle % 360) + 360) % 360
+
+        // Store in InlineArray metadata
+        frameMetadata.rotationAngles[0] = self.frontRotationDegrees
+        frameMetadata.rotationAngles[1] = self.backRotationDegrees
+        frameMetadata.rotationAngles[2] = self.compositorRotationDegrees
+        frameMetadata.dimensions[0] = frontDimensions.width
+        frameMetadata.dimensions[1] = frontDimensions.height
+        frameMetadata.dimensions[2] = backDimensions.width
+        frameMetadata.dimensions[3] = backDimensions.height
+        frameMetadata.dimensions[4] = combinedDimensions.width
+        frameMetadata.dimensions[5] = combinedDimensions.height
 
         if ciContext == nil {
             ciContext = CIContext(options: [.cacheIntermediates: false])
@@ -232,12 +261,12 @@ actor RecordingCoordinator {
         compositor = FrameCompositor(
             width: combinedDimensions.width,
             height: combinedDimensions.height,
-            deviceOrientation: deviceOrientation,
+            interfaceOrientation: interfaceOrientation,
             rotationAngle: compositorRotationDegrees,
             isPortrait: isPortrait,
             isFrontOnTop: isFrontOnTop
         )
-        print("✅ FrameCompositor initialized for combined output with orientation: \(deviceOrientation.rawValue)")
+        print("✅ FrameCompositor initialized for combined output with interface orientation: \(interfaceOrientation.rawValue)")
 
         print("✅ RecordingCoordinator: Configuration complete")
         print("   Front: \(frontURL.lastPathComponent)")
@@ -294,27 +323,33 @@ actor RecordingCoordinator {
         let originalWidth = CVPixelBufferGetWidth(pixelBuffer)
         let originalHeight = CVPixelBufferGetHeight(pixelBuffer)
 
-        if let adaptor = frontPixelBufferAdaptor,
-           let input = frontVideoInput,
-           input.isReadyForMoreMediaData {
-            let ok = adaptor.append(pixelBuffer, withPresentationTime: time)
-            if ok {
-                lastFrontVideoPTS = time
-            } else {
-                print("⚠️ Failed to append ORIGINAL front pixel buffer at \(time.seconds)s")
-            }
-        }
-
+        // Measure frame processing performance
+        let start = performanceClock.now
         guard let rotatedBuffer = rotateAndMirrorPixelBuffer(pixelBuffer, rotationDegrees: frontRotationDegrees, mirror: true) else {
-            print("⚠️ Failed to rotate front buffer for compositor")
+            print("⚠️ Failed to rotate front buffer")
             return
         }
+        let duration = performanceClock.now - start
+        frameProcessingTimes.append(duration)
 
         let rotatedWidth = CVPixelBufferGetWidth(rotatedBuffer)
         let rotatedHeight = CVPixelBufferGetHeight(rotatedBuffer)
 
         if lastFrontBuffer == nil {
             print("📐 Front buffer: \(originalWidth)x\(originalHeight) → \(rotatedWidth)x\(rotatedHeight) (rotation: \(frontRotationDegrees)°)")
+        }
+
+        // ✅ FIX: Append ROTATED buffer to front writer (was appending original landscape buffer)
+        if let adaptor = frontPixelBufferAdaptor,
+           let input = frontVideoInput,
+           input.isReadyForMoreMediaData {
+            let ok = adaptor.append(rotatedBuffer, withPresentationTime: time)
+            if ok {
+                lastFrontVideoPTS = time
+                frameMetadata.timestamps[0] = time
+            } else {
+                print("⚠️ Failed to append rotated front pixel buffer at \(time.seconds)s")
+            }
         }
 
         // Cache a portrait-oriented, mirrored copy for the combined video compositor.
@@ -327,19 +362,8 @@ actor RecordingCoordinator {
         let originalWidth = CVPixelBufferGetWidth(pixelBuffer)
         let originalHeight = CVPixelBufferGetHeight(pixelBuffer)
 
-        if let adaptor = backPixelBufferAdaptor,
-           let input = backVideoInput,
-           input.isReadyForMoreMediaData {
-            let ok = adaptor.append(pixelBuffer, withPresentationTime: time)
-            if ok {
-                lastBackVideoPTS = time
-            } else {
-                print("⚠️ Failed to append ORIGINAL back pixel buffer at \(time.seconds)s")
-            }
-        }
-
         guard let rotatedBuffer = rotateAndMirrorPixelBuffer(pixelBuffer, rotationDegrees: backRotationDegrees, mirror: false) else {
-            print("⚠️ Failed to rotate back buffer for compositor")
+            print("⚠️ Failed to rotate back buffer")
             return
         }
 
@@ -348,6 +372,19 @@ actor RecordingCoordinator {
 
         if lastBackVideoPTS == nil {
             print("📐 Back buffer: \(originalWidth)x\(originalHeight) → \(rotatedWidth)x\(rotatedHeight) (rotation: \(backRotationDegrees)°)")
+        }
+
+        // ✅ FIX: Append ROTATED buffer to back writer (was appending original landscape buffer)
+        if let adaptor = backPixelBufferAdaptor,
+           let input = backVideoInput,
+           input.isReadyForMoreMediaData {
+            let ok = adaptor.append(rotatedBuffer, withPresentationTime: time)
+            if ok {
+                lastBackVideoPTS = time
+                frameMetadata.timestamps[1] = time
+            } else {
+                print("⚠️ Failed to append rotated back pixel buffer at \(time.seconds)s")
+            }
         }
 
         // Create the stacked composition using the most recent oriented buffers.
@@ -359,6 +396,7 @@ actor RecordingCoordinator {
                 let ok2 = adaptor.append(composedBuffer, withPresentationTime: time)
                 if ok2 {
                     lastCombinedVideoPTS = time
+                    frameMetadata.timestamps[2] = time
                 } else {
                     print("⚠️ Failed to append composed pixel buffer at \(time.seconds)s")
                 }
@@ -367,6 +405,22 @@ actor RecordingCoordinator {
             }
         }
     }
+
+    // MARK: - Future Optimization Opportunity (Swift 6.2 Span)
+    //
+    // The pixel buffer rotation below uses Core Image for GPU acceleration.
+    // For CPU-based pixel manipulation, Swift 6.2's Span type could provide
+    // zero-overhead, safe access to pixel buffer memory:
+    //
+    // Example pattern:
+    //   CVPixelBufferLockBaseAddress(buffer, .readOnly)
+    //   defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+    //   let baseAddress = CVPixelBufferGetBaseAddress(buffer)
+    //   let span = Span(baseAddress, count: width * height * 4)
+    //   // Safe, zero-overhead access without UnsafeBufferPointer
+    //
+    // Current approach (Core Image) is already optimal for GPU acceleration.
+    // Consider Span if switching to CPU-based rotation for specific formats.
 
     // MARK: - Pixel Buffer Rotation
     private func rotateAndMirrorPixelBuffer(_ pixelBuffer: CVPixelBuffer, rotationDegrees: Int, mirror: Bool) -> CVPixelBuffer? {
@@ -447,6 +501,7 @@ actor RecordingCoordinator {
         if let input = frontAudioInput, input.isReadyForMoreMediaData {
             if input.append(sampleBuffer) {
                 lastFrontAudioPTS = audioPTS
+                frameMetadata.timestamps[3] = audioPTS
                 successCount += 1
             }
         }
@@ -455,6 +510,7 @@ actor RecordingCoordinator {
         if let input = backAudioInput, input.isReadyForMoreMediaData {
             if input.append(sampleBuffer) {
                 lastBackAudioPTS = audioPTS
+                frameMetadata.timestamps[4] = audioPTS
                 successCount += 1
             }
         }
@@ -463,6 +519,7 @@ actor RecordingCoordinator {
         if let input = combinedAudioInput, input.isReadyForMoreMediaData {
             if input.append(sampleBuffer) {
                 lastCombinedAudioPTS = audioPTS
+                frameMetadata.timestamps[5] = audioPTS
                 successCount += 1
             }
         }
@@ -512,6 +569,11 @@ actor RecordingCoordinator {
 
     func stopWritingWithRecovery() async throws -> RecordingResult {
         print("🎬 RecordingCoordinator: Stopping writing with error recovery...")
+
+        // Log performance metrics before cleanup
+        if let avgTime = getAverageFrameProcessingTime() {
+            print("📊 Average frame processing time: \(avgTime)")
+        }
 
         guard isWriting else {
             throw RecordingError.notWriting
@@ -676,8 +738,16 @@ actor RecordingCoordinator {
         backURL = nil
         combinedURL = nil
         compositor = nil
+        frameProcessingTimes.removeAll()
 
         print("🧹 RecordingCoordinator cleaned up")
+    }
+
+    // MARK: - Performance Measurement
+    func getAverageFrameProcessingTime() -> Duration? {
+        guard !frameProcessingTimes.isEmpty else { return nil }
+        let total = frameProcessingTimes.reduce(Duration.zero, +)
+        return total / frameProcessingTimes.count
     }
 
     // MARK: - Status

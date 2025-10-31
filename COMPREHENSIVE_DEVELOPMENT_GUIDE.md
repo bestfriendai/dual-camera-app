@@ -55,7 +55,7 @@
 - **Incomplete testing coverage** - Minimal unit tests
 
 #### Improvement Opportunities 📈
-- Add iOS 18+ features (spatial video, Camera Control button)
+- Add iOS 26+ features (Cinematic Video API, high-quality Bluetooth audio, spatial audio capture)
 - Implement MP4 export for universal sharing
 - Add dynamic quality adjustment based on conditions
 - Enhance user feedback with animations
@@ -69,7 +69,7 @@
 | **P0** | Thermal monitoring | Medium | Critical | Week 1 |
 | **P1** | Background handling | Medium | High | Week 2 |
 | **P1** | Storage management | Low | High | Week 2 |
-| **P2** | iOS 18 features | High | Medium | Month 1 |
+| **P2** | iOS 26 features | High | Medium | Month 1 |
 | **P2** | UI polish | Medium | Medium | Month 1 |
 | **P3** | Analytics | Medium | Low | Month 2 |
 
@@ -425,6 +425,41 @@ DualCameraManager.saveToPhotoLibrary()
 - Fluorescent (4000K)
 
 **File Location**: `DualLensPro/Models/WhiteBalanceMode.swift:1-42`
+
+### Swift 6.2 Performance Optimizations
+
+#### InlineArray for Frame Metadata
+- **Location**: `RecordingCoordinator.swift`
+- **Usage**: Fixed-size arrays for timestamps, rotation angles, and dimensions
+- **Benefit**: Reduces heap allocations in hot path (6 separate allocations → inline storage)
+- **Syntax**: `[N of T]` or `InlineArray<N, T>`
+- **Example**: `var timestamps: [6 of CMTime]` for frame timestamp tracking
+
+#### Span Type (Future Optimization)
+- **Status**: Documented for future use
+- **Use Case**: Zero-overhead, safe pixel buffer access
+- **Current Approach**: Core Image GPU acceleration (already optimal)
+- **When to Use**: CPU-based pixel manipulation or custom shaders
+- **Example Pattern**: See comments in `RecordingCoordinator.swift` line 407
+
+#### Strict Memory Safety Mode
+- **Status**: Enabled in project build settings
+- **Compiler Flag**: `SWIFT_STRICT_MEMORY_SAFETY = YES`
+- **Annotations**: `@safe(unchecked)` on justified `nonisolated(unsafe)` properties
+- **Benefit**: Compile-time checking of unsafe operations (zero runtime cost)
+- **Safety Model**: All unsafe usage is protected by locks or serial dispatch queues
+
+#### Approachable Concurrency
+- **Feature**: `NonisolatedNonsendingByDefault`
+- **Benefit**: nonisolated async methods run on caller's actor (reduces context switches)
+- **Impact**: Improved performance for async operations that don't need parallelism
+- **Note**: `@concurrent` attribute not used (frame processing is actor-isolated)
+
+#### Performance Measurement
+- **Infrastructure**: `ContinuousClock` for frame processing timing
+- **Metrics**: Average frame processing time, rotation overhead
+- **Purpose**: Validate optimization decisions with real data
+- **Access**: `RecordingCoordinator.getAverageFrameProcessingTime()`
 
 #### Video Stabilization
 
@@ -1613,11 +1648,11 @@ func exportRecording(url: URL, format: ExportFormat) async throws -> URL {
 
 ### 5.3 UI/UX Best Practices for Camera Apps
 
-#### Human Interface Guidelines (iOS 18+)
+#### Human Interface Guidelines (iOS 26+)
 
 **Best Practice #16: Camera Control Button Integration**
 
-**Source**: Apple HIG - Camera Control (iOS 18)
+**Source**: Apple HIG - Camera Control (iOS 26)
 
 **New Hardware**: iPhone 16 introduces physical Camera Control button
 
@@ -1629,9 +1664,11 @@ func exportRecording(url: URL, format: ExportFormat) async throws -> URL {
 
 **Implementation Requirement**: **Consistency** between hardware button and touch UI
 
+**Note**: iOS 26 introduces AVCaptureEventInteraction API for Camera Control button integration
+
 ```swift
 // Ensure touch gestures match hardware button behavior
-@available(iOS 18.0, *)
+@available(iOS 26.0, *)
 func configureCameraControl() {
     // Map Camera Control events to same actions as touch UI
     // Single press → capturePhoto()
@@ -1639,7 +1676,7 @@ func configureCameraControl() {
 }
 ```
 
-**Your Status**: ❌ Not implemented - consider for iOS 18+ support
+**Your Status**: ❌ Not implemented - consider for iOS 26+ support
 
 ---
 
@@ -2345,15 +2382,17 @@ func checkStorageBeforeRecording() {
 
 ### 6.2 Priority 1: Should-Have (Post-Launch, First Update)
 
-#### Issue #5: Add iOS 18+ Features
+#### Issue #5: Add iOS 26+ Features
 
-**Feature #1: Spatial Video Support** (iPhone 15 Pro+)
+**Feature #1: Cinematic Video Capture** (iPhone 15 Pro+)
 
 ```swift
-@available(iOS 18.0, *)
-func configureSpatialVideoCapture() {
-    // Use main + ultra-wide cameras for spatial video
-    // Requires vertically aligned cameras
+@available(iOS 26.0, *)
+func configureCinematicVideoCapture() {
+    // Enable cinematic video mode with depth effects
+    // Set isCinematicVideoCaptureEnabled = true
+    // Configure simulatedAperture and tracking focus
+    // Use setCinematicVideoTrackingFocus() for subject tracking
 }
 ```
 
@@ -2364,9 +2403,9 @@ func configureSpatialVideoCapture() {
 **Feature #2: Camera Control Button Support** (iPhone 16+)
 
 ```swift
-@available(iOS 18.0, *)
+@available(iOS 26.0, *)
 func configureCameraControlButton() {
-    // Map hardware button events
+    // Map hardware button events via AVCaptureEventInteraction
     // Ensure consistency with touch UI
 }
 ```
@@ -2526,11 +2565,11 @@ struct FocusIndicator: View {
 - [ ] Analytics integration
 - [ ] Crash reporting
 
-**Month 2: iOS 18+ Features**
-- [ ] Spatial video support (iPhone 15 Pro+)
-- [ ] Camera Control button (iPhone 16+)
-- [ ] Enhanced haptics
-- [ ] Widget support
+**Month 2: iOS 26+ Features**
+- [ ] Cinematic video capture (iPhone 15 Pro+)
+- [ ] High-quality Bluetooth audio support
+- [ ] Spatial audio capture
+- [ ] Camera Control button integration (iPhone 16+)
 
 **Month 3: Creative Features**
 - [ ] Real-time video filters
@@ -3181,7 +3220,7 @@ struct StorageIndicator: View {
 **iOS Versions**:
 - [ ] iOS 16.0 (minimum)
 - [ ] iOS 17.0
-- [ ] iOS 18.0 (latest)
+- [ ] iOS 26.0 (latest)
 
 ---
 
@@ -3231,6 +3270,31 @@ private func optimizePreviewResolution() {
 ```
 
 **Savings**: ~40MB (smaller preview buffers)
+
+---
+
+### 10.3 Swift 6.2 Performance Testing
+
+**InlineArray Impact**:
+- Measure memory allocations before/after using Instruments
+- Expected: 6 fewer heap allocations per frame
+- Metric: Allocations per second during recording
+
+**Frame Processing Timing**:
+- Use built-in `ContinuousClock` measurements
+- Compare rotation overhead across device models
+- Target: <5ms per frame on iPhone 15 Pro
+
+**Strict Memory Safety**:
+- Zero runtime cost (compile-time only)
+- Verify no performance regression in release builds
+- Use Xcode Instruments to compare before/after
+
+**Testing Procedure**:
+1. Record 30-second dual-camera video
+2. Check Instruments for allocation count
+3. Review frame processing times in logs
+4. Compare with baseline (pre-Swift 6.2)
 
 ---
 
@@ -3537,7 +3601,7 @@ DualLensPro is a **professionally architected iOS camera application** with:
 
 **Post-Launch Roadmap**:
 - Month 1: Core improvements (tap-to-focus, MP4 export, analytics)
-- Month 2: iOS 18+ features (spatial video, Camera Control button)
+- Month 2: iOS 26+ features (Cinematic video capture, high-quality Bluetooth audio, spatial audio capture, Camera Control button)
 - Month 3: Creative features (filters, PiP mode, watermarks)
 - Month 4+: Premium features (cloud backup, external mic, ProRes)
 
@@ -3546,7 +3610,7 @@ DualLensPro is a **professionally architected iOS camera application** with:
 1. **Accessibility is non-negotiable** - Prioritize VoiceOver support before launch
 2. **Thermal monitoring is critical** - Prevent device damage and user complaints
 3. **Test extensively** on multiple devices and iOS versions
-4. **Consider iOS 18+ features** for competitive advantage
+4. **Consider iOS 26+ features** for competitive advantage
 5. **Iterate based on user feedback** after launch
 
 **This app has strong technical foundations and can become a leading dual-camera recording solution in the App Store with the recommended improvements.**

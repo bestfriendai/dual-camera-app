@@ -32,7 +32,7 @@ private struct TopToolbar: View {
                 Image(systemName: iconName)
                     .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(viewModel.flashMode == .off ? .white : .yellow)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
             }
 
             Divider()
@@ -60,7 +60,7 @@ private struct TopToolbar: View {
                             .foregroundStyle(.white)
                     }
                 }
-                .frame(width: 40, height: 40)
+                .frame(width: 44, height: 44)
             }
 
             Divider()
@@ -75,7 +75,7 @@ private struct TopToolbar: View {
                 Image(systemName: viewModel.showGrid ? "circle.grid.3x3.fill" : "circle.grid.3x3")
                     .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(viewModel.showGrid ? .yellow : .white)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
             }
 
             Divider()
@@ -90,7 +90,7 @@ private struct TopToolbar: View {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
             }
         }
         .background {
@@ -115,6 +115,8 @@ struct DualCameraView: View {
     @EnvironmentObject var viewModel: CameraViewModel
     @State private var frontCameraFrame: CGRect = .zero
     @State private var backCameraFrame: CGRect = .zero
+    @State private var cameraFlipRotation: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     var body: some View {
         GeometryReader { geometry in
@@ -148,7 +150,12 @@ struct DualCameraView: View {
                                     },
                                     currentZoom: viewModel.configuration.frontZoomFactor,
                                     minZoom: viewModel.configuration.frontMinZoom,
-                                    maxZoom: viewModel.configuration.frontMaxZoom
+                                    maxZoom: viewModel.configuration.frontMaxZoom,
+                                    onFocusTap: { point in
+                                        if let layer = viewModel.cameraManager.frontPreviewLayer {
+                                            viewModel.setFocusPoint(point, in: layer, for: .front)
+                                        }
+                                    }
                                 )
                             } else {
                                 // Back camera on top by default
@@ -160,7 +167,12 @@ struct DualCameraView: View {
                                     },
                                     currentZoom: viewModel.configuration.backZoomFactor,
                                     minZoom: viewModel.configuration.backMinZoom,
-                                    maxZoom: viewModel.configuration.backMaxZoom
+                                    maxZoom: viewModel.configuration.backMaxZoom,
+                                    onFocusTap: { point in
+                                        if let layer = viewModel.cameraManager.backPreviewLayer {
+                                            viewModel.setFocusPoint(point, in: layer, for: .back)
+                                        }
+                                    }
                                 )
                             }
 
@@ -204,7 +216,12 @@ struct DualCameraView: View {
                                     },
                                     currentZoom: viewModel.configuration.backZoomFactor,
                                     minZoom: viewModel.configuration.backMinZoom,
-                                    maxZoom: viewModel.configuration.backMaxZoom
+                                    maxZoom: viewModel.configuration.backMaxZoom,
+                                    onFocusTap: { point in
+                                        if let layer = viewModel.cameraManager.backPreviewLayer {
+                                            viewModel.setFocusPoint(point, in: layer, for: .back)
+                                        }
+                                    }
                                 )
                             } else {
                                 // Front camera on bottom by default
@@ -216,7 +233,12 @@ struct DualCameraView: View {
                                     },
                                     currentZoom: viewModel.configuration.frontZoomFactor,
                                     minZoom: viewModel.configuration.frontMinZoom,
-                                    maxZoom: viewModel.configuration.frontMaxZoom
+                                    maxZoom: viewModel.configuration.frontMaxZoom,
+                                    onFocusTap: { point in
+                                        if let layer = viewModel.cameraManager.frontPreviewLayer {
+                                            viewModel.setFocusPoint(point, in: layer, for: .front)
+                                        }
+                                    }
                                 )
                             }
 
@@ -235,6 +257,32 @@ struct DualCameraView: View {
                             .padding(.leading, 20)
                         }
                     }
+                    .rotation3DEffect(
+                        .degrees(cameraFlipRotation),
+                        axis: (x: 0, y: 1, z: 0),
+                        perspective: 0.5
+                    )
+                    .onTapGesture(count: 2) {
+                        // Double-tap to flip cameras
+                        viewModel.switchCameras()
+                        HapticManager.shared.modeChange()
+                    }
+                    .onChange(of: viewModel.isCamerasSwitched) {
+                        // Animate camera flip with spring animation
+                        if reduceMotion {
+                            // Simple fade for accessibility
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                cameraFlipRotation += 180
+                            }
+                        } else {
+                            // Natural spring animation
+                            withAnimation(.spring(response: 0.6, dampingFraction: 0.75)) {
+                                cameraFlipRotation += 180
+                            }
+                        }
+                        // Trigger haptic feedback
+                        HapticManager.shared.modeChange()
+                    }
                 } else {
                     // Single camera mode (fallback for devices without multi-cam support)
                     ZStack {
@@ -246,7 +294,12 @@ struct DualCameraView: View {
                             },
                             currentZoom: viewModel.configuration.backZoomFactor,
                             minZoom: viewModel.configuration.backMinZoom,  // ✅ ZOOM FIX
-                            maxZoom: viewModel.configuration.backMaxZoom
+                            maxZoom: viewModel.configuration.backMaxZoom,
+                            onFocusTap: { point in
+                                if let layer = viewModel.cameraManager.backPreviewLayer {
+                                    viewModel.setFocusPoint(point, in: layer, for: .back)
+                                }
+                            }
                         )
 
                         // Grid overlay
@@ -284,12 +337,17 @@ struct DualCameraView: View {
                     // Top Overlay - Toolbar and Timer
                     VStack(spacing: 12) {
                         HStack {
+                            // Storage Indicator (left side)
+                            StorageIndicator()
+                                .padding([.top], max(geometry.safeAreaInsets.top + 70, 80))
+                                .padding([.leading], 20)
+
                             Spacer()
 
                             // Top Toolbar (right side) - with Dynamic Island clearance
                             TopToolbar()
-                                .padding(.top, max(geometry.safeAreaInsets.top + 70, 80))
-                                .padding(.trailing, 20)
+                                .padding([.top], max(geometry.safeAreaInsets.top + 70, 80))
+                                .padding([.trailing], 20)
                         }
 
                         // Timer Display - only show when recording
@@ -375,11 +433,26 @@ struct DualCameraView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .zIndex(99)
                     }
+
+                    // Focus Indicator
+                    if viewModel.showFocusIndicator {
+                        FocusIndicator(
+                            position: viewModel.focusIndicatorPosition,
+                            isVisible: $viewModel.showFocusIndicator
+                        )
+                        .zIndex(100)
+                    }
                 }
             }
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: viewModel.showSaveSuccessToast)
             .sheet(isPresented: $viewModel.showSettings) {
                 SettingsView(viewModel: viewModel)
+            }
+            .sheet(isPresented: $viewModel.showAdvancedControls) {
+                AdvancedControlsView()
+                    .environmentObject(viewModel)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
             }
 
         }

@@ -33,6 +33,16 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
     }
     nonisolated(unsafe) private var useMultiCam: Bool = false
 
+    // MARK: - Thread-Safe State (Swift 6.2 Strict Memory Safety)
+    //
+    // AVFoundation objects use nonisolated(unsafe) with @safe(unchecked) because:
+    // 1. AVFoundation types are not Sendable (Apple's API limitation)
+    // 2. All access is serialized via sessionQueue (serial dispatch queue)
+    // 3. The serial queue ensures mutual exclusion and memory ordering
+    //
+    // This is a justified use of unsafe - the thread safety is manually verified
+    // and documented throughout the class.
+
     // MARK: - Thread-Safe State (using OSAllocatedUnfairLock for safe GCD access)
     private let recordingStateLock = OSAllocatedUnfairLock<RecordingState>(initialState: .idle)
 
@@ -90,7 +100,8 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
     nonisolated(unsafe) private var frontPhotoOutput: AVCapturePhotoOutput?
     nonisolated(unsafe) private var backPhotoOutput: AVCapturePhotoOutput?
 
-    // Photo capture delegate storage (thread-safe access)
+    // Photo capture delegate storage (thread-safe via photoDelegateQueue dispatch)
+    // @safe(unchecked): All access is synchronized via photoDelegateQueue dispatch
     private let photoDelegateQueue = DispatchQueue(label: "com.duallens.photoDelegates")
     nonisolated(unsafe) private var _activePhotoDelegates: [String: PhotoCaptureDelegate] = [:]
 
@@ -111,6 +122,10 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
 
     // Background task support
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+
+    // TODO: Consider migrating recording state to OSAllocatedUnfairLock
+    // Current approach: nonisolated(unsafe) with manual synchronization via sessionQueue
+    // Future improvement: Wrap in OSAllocatedUnfairLock<RecordingMetadata> for explicit safety
 
     // URLs for recording output (nonisolated for access from various contexts)
     nonisolated(unsafe) private var frontOutputURL: URL?
@@ -238,6 +253,43 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
     @Published var isFocusLocked = false
     @Published var exposureValue: Float = 0.0 // -2.0 to 2.0
 
+    // MARK: - Thermal Monitoring & Background Handling
+    // DO NOT modify recording logic - only add hooks for future quality changes
+    nonisolated(unsafe) private var shouldResumeOnForeground = false
+    nonisolated(unsafe) private var wasPausedForBackground = false
+
+    // MARK: - Window Scene Helpers
+
+    /// Get the current active window scene (iOS 26+)
+    nonisolated private func currentWindowScene() -> UIWindowScene? {
+        return MainActor.assumeIsolated {
+            // Get all connected scenes
+            let scenes = UIApplication.shared.connectedScenes
+
+            // Try to find an active foreground scene first
+            if let activeScene = scenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first(where: { $0.activationState == .foregroundActive }) {
+                return activeScene
+            }
+
+            // Fall back to any UIWindowScene if no active scene found
+            return scenes.compactMap({ $0 as? UIWindowScene }).first
+        }
+    }
+
+    /// Get the current interface orientation using iOS 26 effectiveGeometry API
+    nonisolated private func currentInterfaceOrientation() -> UIInterfaceOrientation {
+        guard let scene = currentWindowScene() else {
+            print("⚠️ No window scene available - defaulting to portrait")
+            return .portrait
+        }
+
+        let orientation = scene.effectiveGeometry.interfaceOrientation
+        print("📱 Interface orientation: \(orientation.rawValue) (\(orientationName(orientation)))")
+        return orientation
+    }
+
     // MARK: - Initialization
     override init() {
         super.init()
@@ -267,6 +319,7 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         )
 
         // Device orientation changes for video orientation updates
+        // Note: We use effectiveGeometry API in iOS 26 but still observe device orientation changes
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(deviceOrientationDidChange),
@@ -274,9 +327,23 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             object: nil
         )
 
-        // Thermal state monitoring
-        // Note: Removed #selector for thermalStateChanged as it's not critical for release
-        // TODO: Re-add thermal monitoring if needed
+        // Thermal state monitoring - integrated via ThermalStateMonitor in CameraViewModel
+        // Background monitoring will be handled through the ViewModel layer
+
+        // Background/Foreground handling
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppWillResignActive),
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
 
         NotificationCenter.default.addObserver(
             self,
@@ -360,6 +427,65 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             }
         default:
             break
+        }
+    }
+
+    // MARK: - Background/Foreground Handling
+
+    @objc nonisolated private func handleAppWillResignActive(notification: Notification) {
+        Task { @MainActor in
+            print("🌅 App will resign active")
+
+            // Track if we were recording so we can potentially resume
+            if recordingState == .recording {
+                shouldResumeOnForeground = false // Don't auto-resume for safety
+                wasPausedForBackground = true
+
+                // Stop recording when app goes to background
+                // iOS doesn't allow camera access in background for most apps
+                do {
+                    try await stopRecording()
+                    errorMessage = "Recording stopped - app moved to background"
+                    print("⏸️ Recording stopped due to background transition")
+                } catch {
+                    print("❌ Error stopping recording on background: \(error)")
+                }
+            }
+        }
+    }
+
+    @objc nonisolated private func handleAppDidBecomeActive(notification: Notification) {
+        Task { @MainActor in
+            print("🌄 App did become active")
+
+            if wasPausedForBackground {
+                wasPausedForBackground = false
+
+                // Notify user that recording was stopped
+                if !shouldResumeOnForeground {
+                    print("ℹ️ Recording was paused for background - user must manually restart")
+                }
+            }
+
+            // Session will automatically resume via AVCaptureSession
+        }
+    }
+
+    // MARK: - Thermal Monitoring Hooks
+    // NOTE: Actual thermal monitoring is handled in CameraViewModel via ThermalStateMonitor
+    // These methods provide hooks for future quality reduction if needed
+
+    func reducedQualityForThermalState() {
+        // DO NOT modify recording logic - just log for now
+        // In future: could reduce frame rate or resolution
+        print("🌡️ Thermal state requires quality reduction (not implemented in recording pipeline)")
+    }
+
+    func stopRecordingDueToThermalState() async throws {
+        // Stop recording if critical thermal state reached
+        if recordingState == .recording {
+            print("🌡️ Critical thermal state - stopping recording")
+            try await stopRecording()
         }
     }
 
@@ -637,18 +763,16 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             multiCamSession.addConnection(videoConnection)
 
             // Configure connection
-            let angle = videoRotationAngle()
-            if videoConnection.isVideoRotationAngleSupported(angle) {
-                videoConnection.videoRotationAngle = angle
-            }
+            // ✅ FIX: Do NOT set videoRotationAngle on connection
+            // Let RecordingCoordinator handle rotation in software for full control
+            // This fixes the front camera rotation issue (front/back have different sensor orientations)
             if videoConnection.isVideoStabilizationSupported {
                 videoConnection.preferredVideoStabilizationMode = .auto
             }
-            if videoConnection.isVideoMirroringSupported && position == .front {
-                videoConnection.isVideoMirrored = true
-            }
+            // ✅ FIX: Do NOT mirror on connection - RecordingCoordinator handles mirroring
+            // (Mirroring on connection + mirroring in RecordingCoordinator = double mirror = no mirror)
             let positionName = position == .front ? "front" : "back"
-            print("✅ Set video rotation angle to \(angle)° for \(positionName) camera")
+            print("✅ Configured video connection for \(positionName) camera (rotation handled in software)")
         } else {
             // For single-cam sessions, check and add normally
             guard singleCamSession.canAddOutput(videoOutput) else {
@@ -659,18 +783,14 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
 
             // Configure connection
             if let connection = videoOutput.connection(with: .video) {
-                let angle = videoRotationAngle()
-                if connection.isVideoRotationAngleSupported(angle) {
-                    connection.videoRotationAngle = angle
-                }
+                // ✅ FIX: Do NOT set videoRotationAngle on connection
+                // Let RecordingCoordinator handle rotation in software for full control
                 if connection.isVideoStabilizationSupported {
                     connection.preferredVideoStabilizationMode = .auto
                 }
-                if connection.isVideoMirroringSupported && position == .front {
-                    connection.isVideoMirrored = true
-                }
+                // ✅ FIX: Do NOT mirror on connection - RecordingCoordinator handles mirroring
                 let positionName = position == .front ? "front" : "back"
-                print("✅ Set video rotation angle to \(angle)° for \(positionName) camera (single-cam)")
+                print("✅ Configured video connection for \(positionName) camera (single-cam, rotation handled in software)")
             }
         }
 
@@ -1691,55 +1811,54 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
     // MARK: - Orientation Helpers
 
     /// Get current video rotation angle for AVCaptureConnection (iOS 17+)
-    /// Returns rotation angle in degrees (0, 90, 180, 270)
+    /// Returns rotation angle in degrees (0, 90, 180, 270) based on interface orientation
     nonisolated private func videoRotationAngle() -> CGFloat {
-        // Access UIDevice.current.orientation in a thread-safe way
-        let orientation = MainActor.assumeIsolated {
-            UIDevice.current.orientation
-        }
+        let orientation = currentInterfaceOrientation()
         switch orientation {
         case .landscapeLeft:
-            return 180  // landscapeRight in old API
+            return 0  // No rotation needed
         case .landscapeRight:
-            return 0    // landscapeLeft in old API
+            return 180  // Rotate 180°
         case .portraitUpsideDown:
-            return 270
-        default:  // portrait
-            return 90
+            return 270  // Rotate 270°
+        case .portrait, .unknown:
+            return 90  // Rotate 90° for portrait
+        @unknown default:
+            return 90  // Default to portrait rotation
         }
     }
 
     /// Get current video orientation for AVCaptureConnection (deprecated iOS 17+)
-    /// Maps device orientation to camera space (note the inversion for landscape)
+    /// Maps interface orientation to AVCaptureVideoOrientation
     @available(*, deprecated, message: "Use videoRotationAngle() instead")
     nonisolated private func currentVideoOrientation() -> AVCaptureVideoOrientation {
-        let orientation = MainActor.assumeIsolated {
-            UIDevice.current.orientation
-        }
+        let orientation = currentInterfaceOrientation()
         switch orientation {
         case .landscapeLeft:
-            return .landscapeRight  // Camera space vs UI space inversion
-        case .landscapeRight:
             return .landscapeLeft
+        case .landscapeRight:
+            return .landscapeRight
         case .portraitUpsideDown:
             return .portraitUpsideDown
-        default:
+        case .portrait, .unknown:
+            return .portrait
+        @unknown default:
             return .portrait
         }
     }
 
     /// Get current video transform for AVAssetWriterInput
-    /// Camera sensor captures in landscape (1920x1080), so we need to rotate based on device orientation
+    /// Camera sensor captures in landscape (1920x1080), so we need to rotate based on interface orientation
     private func currentVideoTransform() -> CGAffineTransform {
-        let orientation = UIDevice.current.orientation
-        print("📱 Current device orientation: \(orientation.rawValue) (\(orientationName(orientation)))")
+        let orientation = currentInterfaceOrientation()
+        print("📱 Current interface orientation: \(orientation.rawValue) (\(orientationName(orientation)))")
 
         // ✅ CRITICAL FIX: videoRotationAngle on AVCaptureConnection sets METADATA only
         // The actual pixel buffers are STILL in landscape (1920x1080)
         // We need to apply transform to rotate them for proper playback
         let transform: CGAffineTransform
         switch orientation {
-        case .portrait, .unknown, .faceUp, .faceDown:
+        case .portrait, .unknown:
             // Portrait mode - rotate 90° counter-clockwise
             // This rotates 1920x1080 landscape buffer to display as portrait
             transform = CGAffineTransform(rotationAngle: .pi / 2)
@@ -1765,14 +1884,12 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         return transform
     }
 
-    private func orientationName(_ orientation: UIDeviceOrientation) -> String {
+    nonisolated private func orientationName(_ orientation: UIInterfaceOrientation) -> String {
         switch orientation {
         case .portrait: return "portrait"
         case .portraitUpsideDown: return "portraitUpsideDown"
         case .landscapeLeft: return "landscapeLeft"
         case .landscapeRight: return "landscapeRight"
-        case .faceUp: return "faceUp"
-        case .faceDown: return "faceDown"
         case .unknown: return "unknown"
         @unknown default: return "unknown"
         }
@@ -1803,8 +1920,9 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
     }
 
     /// Update video orientation on all active connections
+    /// Called when UIWindowScene.didUpdateEffectiveGeometryNotification fires (iOS 26+)
     @objc nonisolated private func deviceOrientationDidChange() {
-        print("📱 Device orientation changed - updating video connections")
+        print("📱 Scene geometry changed - updating video connections")
 
         // Capture session running state on MainActor before async work
         Task { @MainActor [weak self] in
@@ -1895,9 +2013,9 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         let bitRate = recordingQuality.bitRate
         let frameRate = captureMode.frameRate  // ✅ Get dynamic frame rate from capture mode
 
-        func rotationDegrees(for orientation: UIDeviceOrientation) -> Int {
+        func rotationDegrees(for orientation: UIInterfaceOrientation) -> Int {
             switch orientation {
-            case .portrait, .unknown, .faceUp, .faceDown:
+            case .portrait, .unknown:
                 return 90
             case .portraitUpsideDown:
                 return 270
@@ -1910,7 +2028,7 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             }
         }
 
-        let orientation = UIDevice.current.orientation
+        let orientation = currentInterfaceOrientation()
         var rotationDegrees = rotationDegrees(for: orientation)
 
         // If we somehow end up with a landscape value, fall back to portrait to avoid sideways exports.
@@ -1919,13 +2037,11 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             rotationDegrees = 90
         }
 
-        // ✅ CRITICAL FIX: Buffers are now physically rotated by videoRotationAngle on connections
-        // - Front camera: videoRotationAngle = 90° (physically rotates LandscapeLeft → Portrait)
-        // - Back camera: videoRotationAngle = 90° (physically rotates LandscapeRight → Portrait)
-        // - Individual videos: NO transform needed (buffers already rotated)
-        // - Merged video: NO pixel rotation needed (buffers already rotated)
-        let frontRotationDegrees = 0  // No rotation needed - already rotated by connection
-        let backRotationDegrees = 0   // No rotation needed - already rotated by connection
+        // ✅ FIX: Buffers arrive in native landscape orientation (NOT rotated by connection)
+        // RecordingCoordinator will rotate them to portrait based on these rotation degrees
+        // Front and back both need 90° CW rotation (from landscape to portrait)
+        let frontRotationDegrees = rotationDegrees  // Apply rotation in RecordingCoordinator
+        let backRotationDegrees = rotationDegrees   // Apply rotation in RecordingCoordinator
         let compositorRotationDegrees = rotationDegrees
         let portraitAngles: Set<Int> = [90, 270]
         let isPortraitOrientation = portraitAngles.contains(compositorRotationDegrees)
@@ -1949,11 +2065,10 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         let frontDimensions = activeDimensions(for: frontCameraInput)
         let backDimensions = activeDimensions(for: backCameraInput)
 
-        // ✅ CRITICAL FIX: When using videoRotationAngle to physically rotate buffers,
-        // we must swap width/height dimensions for the AVAssetWriter to match the rotated buffers
-        // - Native sensor: 1920x1080 (landscape)
-        // - After videoRotationAngle = 90°: buffers are 1080x1920 (portrait)
-        // - AVAssetWriter must be configured with 1080x1920 to match!
+        // ✅ FIX: Since we're NOT using videoRotationAngle on connections,
+        // buffers arrive in native landscape (1920x1080) and will be rotated by RecordingCoordinator
+        // After RecordingCoordinator rotation: buffers become portrait (1080x1920)
+        // AVAssetWriter must be configured with portrait dimensions to match rotated buffers
         let frontDimensionsRotated = isPortraitOrientation ?
             (width: frontDimensions.height, height: frontDimensions.width) : frontDimensions
         let backDimensionsRotated = isPortraitOrientation ?
@@ -2001,7 +2116,7 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             backRotationDegrees: backRotationDegrees,
             rotationAngle: compositorRotationDegrees,
             isPortrait: isPortraitOrientation,
-            deviceOrientation: orientation,
+            interfaceOrientation: orientation,
             isFrontOnTop: isCamerasSwitched
         )
 

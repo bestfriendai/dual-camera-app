@@ -15,7 +15,7 @@ class CameraViewModel: ObservableObject {
     @Published var isAuthorized = false
     @Published var isCameraReady = false // New flag to track if camera is fully initialized
     var cameraManager = DualCameraManager() // Removed @Published - updates are handled via Combine subscriptions
-    var configuration = CameraConfiguration() // Removed @Published - internal state only
+    @Published var configuration = CameraConfiguration() // ✅ FIX: Must be @Published so settings UI updates
     @Published var showError = false
     @Published var errorMessage: String = ""
 
@@ -30,6 +30,7 @@ class CameraViewModel: ObservableObject {
     // Managers & Services (removed @Published - these don't need UI updates)
     var subscriptionManager = SubscriptionManager()
     var photoLibraryService = PhotoLibraryService()
+    var thermalMonitor = ThermalStateMonitor()
     // TODO: Add DeviceMonitorService.swift to Xcode project and uncomment
     // private let deviceMonitor = DeviceMonitorService.shared
     // TODO: Add AnalyticsService to Xcode project and uncomment
@@ -37,6 +38,12 @@ class CameraViewModel: ObservableObject {
     lazy var settingsViewModel: SettingsViewModel = {
         SettingsViewModel(configuration: configuration)
     }()
+
+    // Thermal & Storage State
+    @Published var showThermalWarning = false
+    @Published var thermalWarningMessage: String?
+    @Published var showStorageWarning = false
+    @Published var storageWarningMessage: String?
 
     // Capture Mode
     @Published var currentCaptureMode: CaptureMode = .video {
@@ -56,6 +63,10 @@ class CameraViewModel: ObservableObject {
 
     // Camera switching state (mirrored from cameraManager for SwiftUI updates)
     @Published var isCamerasSwitched = false
+
+    // Focus indicator state
+    @Published var showFocusIndicator = false
+    @Published var focusIndicatorPosition: CGPoint = .zero
 
     // Recording state passthrough
     var isRecording: Bool {
@@ -148,6 +159,9 @@ class CameraViewModel: ObservableObject {
         // deviceMonitor.startMonitoring()
         // deviceMonitor.delegate = cameraManager
         // print("✅ Device monitoring started")
+
+        // Setup thermal monitoring
+        setupThermalMonitoring()
 
         // NOTE: Do NOT call setupRecordingMonitor() here - it will be called after camera setup
         // Calling async operations in init can cause crashes
@@ -630,6 +644,10 @@ class CameraViewModel: ObservableObject {
     // MARK: - Focus Control
     func setFocusPoint(_ point: CGPoint, in previewLayer: AVCaptureVideoPreviewLayer, for position: CameraPosition) {
         cameraManager.setFocusPoint(point, in: previewLayer, for: position)
+
+        // Show focus indicator at tap location
+        focusIndicatorPosition = point
+        showFocusIndicator = true
     }
 
     func toggleFocusLock(for position: CameraPosition) {
@@ -871,6 +889,98 @@ class CameraViewModel: ObservableObject {
         let totalBytes = Int64(estimatedBytes * 3)
 
         return max(totalBytes, 500_000_000)  // Minimum 500MB
+    }
+
+    // MARK: - Thermal Monitoring
+
+    private func setupThermalMonitoring() {
+        // Monitor thermal state changes
+        thermalMonitor.$shouldStopRecording
+            .sink { [weak self] shouldStop in
+                guard let self = self else { return }
+                if shouldStop && self.isRecording {
+                    Task { @MainActor in
+                        do {
+                            try await self.cameraManager.stopRecordingDueToThermalState()
+                            self.showThermalAlert("Critical temperature reached. Recording stopped to prevent overheating.")
+                        } catch {
+                            print("❌ Error stopping recording due to thermal state: \(error)")
+                        }
+                    }
+                }
+            }
+            .store(in: &cancellables)
+
+        thermalMonitor.$thermalWarning
+            .sink { [weak self] warning in
+                guard let self = self, let warning = warning else { return }
+                Task { @MainActor in
+                    self.showThermalAlert(warning)
+                }
+            }
+            .store(in: &cancellables)
+
+        thermalMonitor.$shouldReduceQuality
+            .sink { [weak self] shouldReduce in
+                if shouldReduce {
+                    Task { @MainActor in
+                        self?.cameraManager.reducedQualityForThermalState()
+                    }
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func showThermalAlert(_ message: String) {
+        thermalWarningMessage = message
+        showThermalWarning = true
+        HapticManager.shared.warning()
+
+        // Auto-dismiss after 5 seconds
+        Task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            await MainActor.run {
+                self.showThermalWarning = false
+            }
+        }
+    }
+
+    // MARK: - Enhanced Storage Management
+
+    func checkStorageBeforeRecording() {
+        let level = StorageManager.storageLevel()
+
+        switch level {
+        case .critical:
+            storageWarningMessage = StorageManager.storageWarningMessage(quality: recordingQuality)
+            showStorageWarning = true
+            HapticManager.shared.error()
+
+        case .low:
+            storageWarningMessage = StorageManager.storageWarningMessage(quality: recordingQuality)
+            showStorageWarning = true
+            HapticManager.shared.warning()
+
+        case .warning:
+            // Show subtle warning but allow recording
+            print("⚠️ Storage is getting low: \(StorageManager.formattedAvailableStorage())")
+
+        case .adequate:
+            break
+        }
+    }
+
+    var storageLevel: StorageManager.StorageLevel {
+        StorageManager.storageLevel()
+    }
+
+    var estimatedRecordingTime: String {
+        let duration = StorageManager.estimatedRecordingDuration(quality: recordingQuality)
+        return StorageManager.formattedDuration(duration)
+    }
+
+    var availableStorage: String {
+        StorageManager.formattedAvailableStorage()
     }
 
     // MARK: - Error Handling

@@ -18,8 +18,15 @@ class GalleryViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var showError = false
 
+    // Export state
+    @Published var isExporting = false
+    @Published var exportProgress: Double = 0.0
+    @Published var showExportSuccess = false
+    @Published var exportedURL: URL?
+
     // MARK: - Services
     private let photoLibraryService: PhotoLibraryService
+    private let videoExporter = VideoExporter()
 
     // MARK: - Initialization
     init(photoLibraryService: PhotoLibraryService = PhotoLibraryService()) {
@@ -151,6 +158,56 @@ class GalleryViewModel: ObservableObject {
         }
 
         return items
+    }
+
+    // MARK: - Export Video as MP4
+    func exportAsMP4(_ asset: PHAsset) async {
+        guard asset.mediaType == .video else {
+            showError(message: "Selected asset is not a video")
+            return
+        }
+
+        // Get original video URL
+        guard let videoURL = await getVideoURL(for: asset) else {
+            showError(message: "Failed to get video URL")
+            return
+        }
+
+        // Check if it's already an MP4
+        if videoURL.pathExtension.lowercased() == "mp4" {
+            showError(message: "Video is already in MP4 format")
+            return
+        }
+
+        isExporting = true
+        exportProgress = 0.0
+
+        do {
+            // Export to MP4
+            let exportedURL = try await videoExporter.exportAsMP4(movURL: videoURL)
+
+            // Update state
+            self.exportedURL = exportedURL
+            showExportSuccess = true
+
+            print("✅ Video exported successfully to: \(exportedURL.path)")
+
+            // Auto-hide success message after 3 seconds
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            showExportSuccess = false
+
+        } catch {
+            showError(message: "Export failed: \(error.localizedDescription)")
+        }
+
+        isExporting = false
+        exportProgress = 0.0
+    }
+
+    // MARK: - Share Exported MP4
+    func shareExportedMP4() -> [Any] {
+        guard let url = exportedURL else { return [] }
+        return [url]
     }
 
     // MARK: - Error Handling

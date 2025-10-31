@@ -4,8 +4,8 @@
 
 **Record from both iPhone cameras simultaneously with professional-grade controls**
 
-[![iOS 18+](https://upload.wikimedia.org/wikipedia/en/9/9b/IOS_26_Homescreen.png)
-[![Swift 6](https://miro.medium.com/1*uw2XzJO65Li-qGEqoYzdmw.png)
+[![iOS 26+](https://upload.wikimedia.org/wikipedia/en/9/9b/IOS_26_Homescreen.png)
+[![Swift 6.2](https://miro.medium.com/1*uw2XzJO65Li-qGEqoYzdmw.png)
 [![Xcode 16+](https://i.ytimg.com/vi/n-W0CfHFyBg/hqdefault.jpg)
 [![License MIT](https://i.ytimg.com/vi/4cgpu9L2AE8/maxresdefault.jpg)
 
@@ -159,9 +159,9 @@
 
 ### Minimum Requirements
 
-- **iOS**: 18.0 or later
-- **Xcode**: 16.0 or later
-- **Swift**: 6.0
+- **iOS**: 26.0 or later
+- **Xcode**: 26.0 or later
+- **Swift**: 6.2
 - **Device**: iPhone XS or later (Multi-camera support required)
 - **Physical Device**: Required for testing (Simulator doesn't support camera)
 
@@ -342,6 +342,12 @@ DualLensPro/
 
 ## 🎯 Key Technical Implementation
 
+**Technical Highlights**:
+- **Swift 6.2 Optimizations**: InlineArray for metadata, strict memory safety mode, performance instrumentation
+- **GPU-Accelerated Composition**: Metal-based frame compositing
+- **Actor-Based Concurrency**: Thread-safe recording with zero data races
+- **HEVC Hardware Encoding**: Efficient video compression
+
 ### Photo Capture System
 
 ```swift
@@ -517,9 +523,9 @@ try await cameraManager.capturePhoto()
 **Possible Causes**:
 1. Testing in Simulator (not supported)
 2. Device is too old
-3. iOS version is below 18.0
+3. iOS version is below 26.0
 
-**Solution**: Use a physical iPhone XS or later with iOS 18+
+**Solution**: Use a physical iPhone XS or later with iOS 26+
 
 ### Photo Capture Not Working
 
@@ -553,11 +559,11 @@ try await cameraManager.capturePhoto()
 ```bash
 # Check your Xcode version
 xcodebuild -version
-# Should be 16.0 or later
+# Should be 26.0 or later
 
 # Check Swift version
 swift --version
-# Should be 6.0 or later
+# Should be 6.2 or later
 ```
 
 ### Build Steps
@@ -807,9 +813,20 @@ If you encounter any issues or have questions:
 
 ⚠️ **IMPORTANT**: This app requires:
 - Physical iPhone XS or later
-- iOS 18.0 or later
-- Xcode 16.0 or later
+- iOS 26.0 or later
+- Xcode 26.0 or later
 - Multi-camera support
+
+### Swift 6.2 Performance Features
+
+DualLensPro leverages the latest Swift 6.2 performance optimizations:
+
+- **InlineArray**: Fixed-size arrays with inline storage for frame metadata (reduces heap allocations)
+- **Strict Memory Safety**: Compile-time checking of unsafe operations (enabled in build settings)
+- **Approachable Concurrency**: Optimized async/await behavior for better performance
+- **Performance Instrumentation**: Built-in timing measurements for frame processing
+
+These features provide measurable performance improvements while maintaining code safety.
 
 ---
 

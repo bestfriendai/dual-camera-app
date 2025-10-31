@@ -28,9 +28,13 @@ struct SettingsView: View {
                                 if viewModel.recordingQuality == quality {
                                     Image(systemName: "checkmark")
                                         .foregroundColor(.blue)
+                                        .accessibilityHidden(true)
                                 }
                             }
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(quality.rawValue)
+                        .accessibilityAddTraits(viewModel.recordingQuality == quality ? .isSelected : [])
                     }
                 } header: {
                     Text("VIDEO QUALITY")
@@ -52,9 +56,13 @@ struct SettingsView: View {
                                 if viewModel.aspectRatio == ratio {
                                     Image(systemName: "checkmark")
                                         .foregroundColor(.blue)
+                                        .accessibilityHidden(true)
                                 }
                             }
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(ratio.displayName)
+                        .accessibilityAddTraits(viewModel.aspectRatio == ratio ? .isSelected : [])
                     }
                 } header: {
                     Text("ASPECT RATIO")
@@ -77,6 +85,7 @@ struct SettingsView: View {
                                 }
                             }
                         }
+                        .buttonStyle(.plain)
                     }
                 } header: {
                     Text("STABILIZATION")
@@ -101,6 +110,7 @@ struct SettingsView: View {
                                 }
                             }
                         }
+                        .buttonStyle(.plain)
                     }
                 } header: {
                     Text("WHITE BALANCE")
@@ -123,6 +133,7 @@ struct SettingsView: View {
                                 }
                             }
                         }
+                        .buttonStyle(.plain)
                     }
                 } header: {
                     Text("SELF-TIMER")
@@ -137,6 +148,7 @@ struct SettingsView: View {
                             viewModel.toggleGrid()
                         }
                     ))
+                    .accessibilityHint("Shows composition grid on camera preview")
 
                     Toggle("Center Stage", isOn: Binding(
                         get: { viewModel.isCenterStageEnabled },
@@ -145,6 +157,7 @@ struct SettingsView: View {
                             viewModel.toggleCenterStage()
                         }
                     ))
+                    .accessibilityHint("Automatically keeps you centered in frame")
                 } header: {
                     Text("CAMERA FEATURES")
                 } footer: {
@@ -160,6 +173,7 @@ struct SettingsView: View {
                             viewModel.toggleFocusLock(for: .back)
                         }
                     ))
+                    .accessibilityHint("Prevents automatic focus adjustment")
 
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
@@ -192,6 +206,36 @@ struct SettingsView: View {
                     }
                 } header: {
                     Text("FOCUS & EXPOSURE")
+                }
+
+                // ADVANCED CONTROLS
+                Section {
+                    Button {
+                        HapticManager.shared.medium()
+                        dismiss()
+                        // Delay to allow dismiss animation to complete
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            viewModel.showAdvancedControls = true
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "slider.horizontal.3")
+                                .foregroundColor(.blue)
+                                .frame(width: 24)
+                            Text("Advanced Controls")
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .accessibilityLabel("Advanced Controls")
+                    .accessibilityHint("Opens advanced camera controls panel")
+                } header: {
+                    Text("ADVANCED")
+                } footer: {
+                    Text("Access fine-tuned camera controls for professional recording")
                 }
 
                 // APP SETTINGS
@@ -241,6 +285,7 @@ struct SettingsView: View {
                                 }
                             }
                         }
+                        .buttonStyle(.plain)
                     }
                 } header: {
                     Text("DEFAULT CAPTURE MODE")
@@ -274,6 +319,7 @@ struct SettingsView: View {
                                     .foregroundColor(.secondary)
                             }
                         }
+                        .buttonStyle(.plain)
                     }
 
                     Button {
@@ -287,6 +333,7 @@ struct SettingsView: View {
                                 .foregroundColor(.blue)
                         }
                     }
+                    .buttonStyle(.plain)
                 } header: {
                     Text("SUBSCRIPTION")
                 }
@@ -316,6 +363,7 @@ struct SettingsView: View {
                                 .foregroundColor(.red)
                         }
                     }
+                    .buttonStyle(.plain)
                 } header: {
                     Text("ABOUT")
                 } footer: {

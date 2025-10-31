@@ -16,6 +16,7 @@ struct CameraPreviewView: UIViewRepresentable {
     let currentZoom: CGFloat
     let minZoom: CGFloat  // ✅ FIX: Use actual device zoom range
     let maxZoom: CGFloat
+    let onFocusTap: ((CGPoint) -> Void)?
     
     func makeUIView(context: Context) -> PreviewUIView {
         let view = PreviewUIView()
@@ -53,6 +54,14 @@ struct CameraPreviewView: UIViewRepresentable {
         pinchGesture.delegate = context.coordinator  // ✅ Enable simultaneous gesture recognition
         view.addGestureRecognizer(pinchGesture)
 
+        // Add tap gesture for focus
+        let tapGesture = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleTap(_:))
+        )
+        tapGesture.delegate = context.coordinator
+        view.addGestureRecognizer(tapGesture)
+
         return view
     }
     
@@ -66,21 +75,35 @@ struct CameraPreviewView: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onZoomChange: onZoomChange, initialZoom: currentZoom, minZoom: minZoom, maxZoom: maxZoom)
+        Coordinator(
+            onZoomChange: onZoomChange,
+            initialZoom: currentZoom,
+            minZoom: minZoom,
+            maxZoom: maxZoom,
+            onFocusTap: onFocusTap
+        )
     }
 
     class Coordinator: NSObject, UIGestureRecognizerDelegate {
         let onZoomChange: (CGFloat) -> Void
+        let onFocusTap: ((CGPoint) -> Void)?
         var currentZoom: CGFloat
         var minZoom: CGFloat  // ✅ FIX: Actual device zoom range
         var maxZoom: CGFloat
         var lastScale: CGFloat = 1.0
 
-        init(onZoomChange: @escaping (CGFloat) -> Void, initialZoom: CGFloat, minZoom: CGFloat, maxZoom: CGFloat) {
+        init(
+            onZoomChange: @escaping (CGFloat) -> Void,
+            initialZoom: CGFloat,
+            minZoom: CGFloat,
+            maxZoom: CGFloat,
+            onFocusTap: ((CGPoint) -> Void)?
+        ) {
             self.onZoomChange = onZoomChange
             self.currentZoom = initialZoom
             self.minZoom = minZoom
             self.maxZoom = maxZoom
+            self.onFocusTap = onFocusTap
         }
 
         @MainActor
@@ -107,6 +130,15 @@ struct CameraPreviewView: UIViewRepresentable {
             default:
                 break
             }
+        }
+
+        @MainActor
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard let view = gesture.view else { return }
+            let location = gesture.location(in: view)
+
+            // Call the focus tap handler with the tap location
+            onFocusTap?(location)
         }
 
         // ✅ Allow simultaneous gesture recognition for better button responsiveness

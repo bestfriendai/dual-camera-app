@@ -1,0 +1,655 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project DualLensPro.xcodeproj -scheme DualLensPro -destination generic/platform=iOS clean build
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+** CLEAN SUCCEEDED **
+
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (1 target)
+    Target 'DualLensPro' in project 'DualLensPro' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/usr/bin/actool --print-asset-tag-combinations --output-format xml1 /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Assets.xcassets
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/usr/bin/actool --version --output-format xml1
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc --version
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
+
+Build description signature: ef2d2a9d8cc03f9035d2396e9f56fa95
+Build description path: /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/XCBuildData/ef2d2a9d8cc03f9035d2396e9f56fa95.xcbuilddata
+ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/SDKStatCaches.noindex/iphoneos26.0-23A337-3885c01c3e6b6a337905948deab2002e81ce72e5b06c9602b9d30b56f2eed08a.sdkstatcache
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro/DualLensPro.xcodeproj
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk -o /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/SDKStatCaches.noindex/iphoneos26.0-23A337-3885c01c3e6b6a337905948deab2002e81ce72e5b06c9602b9d30b56f2eed08a.sdkstatcache
+
+CreateBuildDirectory /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro/DualLensPro.xcodeproj
+    builtin-create-build-directory /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex
+
+CreateBuildDirectory /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Products
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro/DualLensPro.xcodeproj
+    builtin-create-build-directory /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Products
+
+CreateBuildDirectory /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro/DualLensPro.xcodeproj
+    builtin-create-build-directory /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+CreateBuildDirectory /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Products/Release-iphoneos
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro/DualLensPro.xcodeproj
+    builtin-create-build-directory /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Products/Release-iphoneos
+
+CreateBuildDirectory /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/ExplicitPrecompiledModules
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro/DualLensPro.xcodeproj
+    builtin-create-build-directory /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+CreateBuildDirectory /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/EagerLinkingTBDs/Release-iphoneos
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro/DualLensPro.xcodeproj
+    builtin-create-build-directory /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/EagerLinkingTBDs/Release-iphoneos
+
+WriteAuxiliaryFile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro-109db4c453a640ed9dd8221e48bd2e53-VFS-iphoneos/all-product-headers.yaml
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro/DualLensPro.xcodeproj
+    write-file /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro-109db4c453a640ed9dd8221e48bd2e53-VFS-iphoneos/all-product-headers.yaml
+
+WriteAuxiliaryFile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro-own-target-headers.hmap (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    write-file /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro-own-target-headers.hmap
+
+WriteAuxiliaryFile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro-generated-files.hmap (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    write-file /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro-generated-files.hmap
+
+WriteAuxiliaryFile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro.hmap (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    write-file /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro.hmap
+
+WriteAuxiliaryFile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro.DependencyStaticMetadataFileList (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    write-file /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro.DependencyStaticMetadataFileList
+
+WriteAuxiliaryFile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro-all-target-headers.hmap (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    write-file /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro-all-target-headers.hmap
+
+WriteAuxiliaryFile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro-all-non-framework-target-headers.hmap (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    write-file /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro-all-non-framework-target-headers.hmap
+
+WriteAuxiliaryFile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro-project-headers.hmap (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    write-file /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro-project-headers.hmap
+
+ValidateDevelopmentAssets /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    builtin-validate-development-assets --validate YES_ERROR /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro/DualLensPro/Preview\ Content
+
+WriteAuxiliaryFile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro.DependencyMetadataFileList (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    write-file /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro.DependencyMetadataFileList
+
+WriteAuxiliaryFile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/Objects-normal/arm64/DualLensPro.LinkFileList (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    write-file /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/Objects-normal/arm64/DualLensPro.LinkFileList
+
+WriteAuxiliaryFile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DerivedSources/Entitlements.plist (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    write-file /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DerivedSources/Entitlements.plist
+
+WriteAuxiliaryFile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/Objects-normal/arm64/DualLensPro-OutputFileMap.json (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    write-file /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/Objects-normal/arm64/DualLensPro-OutputFileMap.json
+
+WriteAuxiliaryFile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/Objects-normal/arm64/DualLensPro.SwiftFileList (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    write-file /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/Objects-normal/arm64/DualLensPro.SwiftFileList
+
+WriteAuxiliaryFile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/Objects-normal/arm64/DualLensPro_const_extract_protocols.json (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    write-file /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/Objects-normal/arm64/DualLensPro_const_extract_protocols.json
+
+WriteAuxiliaryFile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/Objects-normal/arm64/DualLensPro.SwiftConstValuesFileList (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    write-file /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/Objects-normal/arm64/DualLensPro.SwiftConstValuesFileList
+
+MkDir /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Products/Release-iphoneos/DualLensPro.app (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    /bin/mkdir -p /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Products/Release-iphoneos/DualLensPro.app
+
+ProcessProductPackaging "" /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro.app.xcent (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    
+    Entitlements:
+    
+    {
+    "application-identifier" = "Y4NZ65U5X7.com.duallens.pro";
+    "com.apple.developer.team-identifier" = Y4NZ65U5X7;
+    "get-task-allow" = 1;
+}
+    
+    builtin-productPackagingUtility -entitlements -format xml -o /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro.app.xcent
+
+ProcessProductPackaging /Users/iamabillionaire/Library/Developer/Xcode/UserData/Provisioning\ Profiles/2179ed96-ec78-4dea-992e-654df346bb60.mobileprovision /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Products/Release-iphoneos/DualLensPro.app/embedded.mobileprovision (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    builtin-productPackagingUtility /Users/iamabillionaire/Library/Developer/Xcode/UserData/Provisioning\ Profiles/2179ed96-ec78-4dea-992e-654df346bb60.mobileprovision -o /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Products/Release-iphoneos/DualLensPro.app/embedded.mobileprovision
+
+ProcessProductPackagingDER /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro.app.xcent /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro.app.xcent.der (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    /usr/bin/derq query -f xml -i /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro.app.xcent -o /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro.app.xcent.der --raw
+
+MkDir /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/assetcatalog_output/thinned (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    /bin/mkdir -p /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/assetcatalog_output/thinned
+
+GenerateAssetSymbols /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ (3)/DualLensPro/DualLensPro/Assets.xcassets (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    /Applications/Xcode.app/Contents/Developer/usr/bin/actool /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro/DualLensPro/Assets.xcassets --compile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Products/Release-iphoneos/DualLensPro.app --output-format human-readable-text --notices --warnings --export-dependency-info /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/assetcatalog_dependencies --output-partial-info-plist /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/assetcatalog_generated_info.plist --app-icon AppIcon --accent-color AccentColor --compress-pngs --enable-on-demand-resources YES --development-region en --target-device iphone --target-device ipad --minimum-deployment-target 26.0 --platform iphoneos --bundle-identifier com.duallens.pro --generate-swift-asset-symbols /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DerivedSources/GeneratedAssetSymbols.swift --generate-objc-asset-symbols /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DerivedSources/GeneratedAssetSymbols.h --generate-asset-symbol-index /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DerivedSources/GeneratedAssetSymbols-Index.plist
+/* com.apple.actool.compilation-results */
+/Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DerivedSources/GeneratedAssetSymbols-Index.plist
+/Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DerivedSources/GeneratedAssetSymbols.h
+/Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DerivedSources/GeneratedAssetSymbols.swift
+
+
+MkDir /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/assetcatalog_output/unthinned (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    /bin/mkdir -p /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/assetcatalog_output/unthinned
+
+CompileAssetCatalogVariant thinned /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Products/Release-iphoneos/DualLensPro.app /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ (3)/DualLensPro/DualLensPro/Assets.xcassets (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    /Applications/Xcode.app/Contents/Developer/usr/bin/actool /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro/DualLensPro/Assets.xcassets --compile /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/assetcatalog_output/thinned --output-format human-readable-text --notices --warnings --export-dependency-info /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/assetcatalog_dependencies_thinned --output-partial-info-plist /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/assetcatalog_generated_info.plist_thinned --app-icon AppIcon --accent-color AccentColor --compress-pngs --enable-on-demand-resources YES --development-region en --target-device iphone --target-device ipad --minimum-deployment-target 26.0 --platform iphoneos
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:34:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var useMultiCam: Bool = false
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:34:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var useMultiCam: Bool = false
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:72:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var multiCamSession: AVCaptureMultiCamSession = AVCaptureMultiCamSession()
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:72:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var multiCamSession: AVCaptureMultiCamSession = AVCaptureMultiCamSession()
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:73:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var singleCamSession: AVCaptureSession = AVCaptureSession()
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:73:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var singleCamSession: AVCaptureSession = AVCaptureSession()
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:82:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var frontCameraInput: AVCaptureDeviceInput?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:82:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var frontCameraInput: AVCaptureDeviceInput?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:83:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var backCameraInput: AVCaptureDeviceInput?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:83:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var backCameraInput: AVCaptureDeviceInput?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:95:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var frontVideoOutput: AVCaptureVideoDataOutput?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:95:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var frontVideoOutput: AVCaptureVideoDataOutput?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:96:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var backVideoOutput: AVCaptureVideoDataOutput?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:96:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var backVideoOutput: AVCaptureVideoDataOutput?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:97:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var audioOutput: AVCaptureAudioDataOutput?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:97:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var audioOutput: AVCaptureAudioDataOutput?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:100:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var frontPhotoOutput: AVCapturePhotoOutput?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:100:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var frontPhotoOutput: AVCapturePhotoOutput?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:101:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var backPhotoOutput: AVCapturePhotoOutput?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:101:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var backPhotoOutput: AVCapturePhotoOutput?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:106:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var _activePhotoDelegates: [String: PhotoCaptureDelegate] = [:]
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:106:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var _activePhotoDelegates: [String: PhotoCaptureDelegate] = [:]
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:109:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var lastFrontPhotoData: Data?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:109:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var lastFrontPhotoData: Data?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:110:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var lastBackPhotoData: Data?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:110:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var lastBackPhotoData: Data?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:113:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) var frontPreviewLayer: AVCaptureVideoPreviewLayer?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:113:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) var frontPreviewLayer: AVCaptureVideoPreviewLayer?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:114:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) var backPreviewLayer: AVCaptureVideoPreviewLayer?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:114:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) var backPreviewLayer: AVCaptureVideoPreviewLayer?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:118:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var recordingCoordinator: RecordingCoordinator?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:118:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var recordingCoordinator: RecordingCoordinator?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:131:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var frontOutputURL: URL?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:131:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var frontOutputURL: URL?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:132:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var backOutputURL: URL?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:132:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var backOutputURL: URL?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:133:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var combinedOutputURL: URL?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:133:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var combinedOutputURL: URL?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:136:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var recordingStartTime: CMTime?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:136:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var recordingStartTime: CMTime?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:137:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var isWriting = false
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:137:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var isWriting = false
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:138:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var hasReceivedFirstVideoFrame = false
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:138:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var hasReceivedFirstVideoFrame = false
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:139:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var hasReceivedFirstAudioFrame = false
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:139:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var hasReceivedFirstAudioFrame = false
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:141:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var lastVideoPTS: CMTime?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:141:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var lastVideoPTS: CMTime?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:142:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var lastAudioPTS: CMTime?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:142:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var lastAudioPTS: CMTime?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:143:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var dropAudioDuringStop = false
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:143:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var dropAudioDuringStop = false
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/FrameCompositor.swift:51:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var pixelBufferPool: CVPixelBufferPool?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/FrameCompositor.swift:51:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var pixelBufferPool: CVPixelBufferPool?
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/FrameCompositor.swift:62:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var isShuttingDown = false
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/FrameCompositor.swift:62:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var isShuttingDown = false
+                    ^
+                    ;
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/FrameCompositor.swift:63:10: error: expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var lastFrontBuffer: (buffer: CVPixelBuffer, time: CMTime)?
+         ^
+         var 
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/FrameCompositor.swift:63:21: error: consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var lastFrontBuffer: (buffer: CVPixelBuffer, time: CMTime)?
+                    ^
+                    ;
+
+SwiftDriver DualLensPro normal arm64 com.apple.xcode.tools.swift.compiler (in target 'DualLensPro' from project 'DualLensPro')
+    cd /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro
+    builtin-SwiftDriver -- /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -module-name DualLensPro -O -whole-module-optimization -enforce-exclusivity\=checked @/Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/Objects-normal/arm64/DualLensPro.SwiftFileList -strict-memory-safety -enable-experimental-feature DebugDescriptionMacro -sdk /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk -target arm64-apple-ios26.0 -g -module-cache-path /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -Xfrontend -serialize-debugging-options -swift-version 6 -I /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Products/Release-iphoneos -F /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Products/Release-iphoneos -emit-localized-strings -emit-localized-strings-path /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/Objects-normal/arm64 -c -num-threads 16 -Xcc -ivfsstatcache -Xcc /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/SDKStatCaches.noindex/iphoneos26.0-23A337-3885c01c3e6b6a337905948deab2002e81ce72e5b06c9602b9d30b56f2eed08a.sdkstatcache -output-file-map /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/Objects-normal/arm64/DualLensPro-OutputFileMap.json -use-frontend-parseable-output -save-temps -no-color-diagnostics -explicit-module-build -module-cache-path /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules -clang-scanner-module-cache-path /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -sdk-module-cache-path /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/ModuleCache.noindex -serialize-diagnostics -emit-dependencies -emit-module -emit-module-path /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/Objects-normal/arm64/DualLensPro.swiftmodule -validate-clang-modules-once -clang-build-session-file /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/ModuleCache.noindex/Session.modulevalidation -Xcc -I/Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/swift-overrides.hmap -emit-const-values -Xfrontend -const-gather-protocols-file -Xfrontend /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/Objects-normal/arm64/DualLensPro_const_extract_protocols.json -Xcc -iquote -Xcc /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro-generated-files.hmap -Xcc -I/Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro-own-target-headers.hmap -Xcc -I/Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro-all-target-headers.hmap -Xcc -iquote -Xcc /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DualLensPro-project-headers.hmap -Xcc -I/Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Products/Release-iphoneos/include -Xcc -I/Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DerivedSources-normal/arm64 -Xcc -I/Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DerivedSources/arm64 -Xcc -I/Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/DerivedSources -emit-objc-header -emit-objc-header-path /Users/iamabillionaire/Library/Developer/Xcode/DerivedData/DualLensPro-agrfeonyhqayvrdbodkxodimyiqn/Build/Intermediates.noindex/DualLensPro.build/Release-iphoneos/DualLensPro.build/Objects-normal/arm64/DualLensPro-Swift.h -working-directory /Users/iamabillionaire/Downloads/Dual_Camera_App_Concept\ \(3\)/DualLensPro -no-emit-module-separately-wmo
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:34:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var useMultiCam: Bool = false
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:34:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var useMultiCam: Bool = false
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:72:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var multiCamSession: AVCaptureMultiCamSession = AVCaptureMultiCamSession()
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:72:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var multiCamSession: AVCaptureMultiCamSession = AVCaptureMultiCamSession()
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:73:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var singleCamSession: AVCaptureSession = AVCaptureSession()
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:73:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var singleCamSession: AVCaptureSession = AVCaptureSession()
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:82:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var frontCameraInput: AVCaptureDeviceInput?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:82:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var frontCameraInput: AVCaptureDeviceInput?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:83:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var backCameraInput: AVCaptureDeviceInput?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:83:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var backCameraInput: AVCaptureDeviceInput?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:95:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var frontVideoOutput: AVCaptureVideoDataOutput?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:95:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var frontVideoOutput: AVCaptureVideoDataOutput?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:96:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var backVideoOutput: AVCaptureVideoDataOutput?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:96:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var backVideoOutput: AVCaptureVideoDataOutput?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:97:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var audioOutput: AVCaptureAudioDataOutput?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:97:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var audioOutput: AVCaptureAudioDataOutput?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:100:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var frontPhotoOutput: AVCapturePhotoOutput?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:100:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var frontPhotoOutput: AVCapturePhotoOutput?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:101:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var backPhotoOutput: AVCapturePhotoOutput?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:101:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var backPhotoOutput: AVCapturePhotoOutput?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:106:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var _activePhotoDelegates: [String: PhotoCaptureDelegate] = [:]
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:106:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var _activePhotoDelegates: [String: PhotoCaptureDelegate] = [:]
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:109:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var lastFrontPhotoData: Data?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:109:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var lastFrontPhotoData: Data?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:110:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var lastBackPhotoData: Data?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:110:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var lastBackPhotoData: Data?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:113:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) var frontPreviewLayer: AVCaptureVideoPreviewLayer?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:113:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) var frontPreviewLayer: AVCaptureVideoPreviewLayer?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:114:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) var backPreviewLayer: AVCaptureVideoPreviewLayer?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:114:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) var backPreviewLayer: AVCaptureVideoPreviewLayer?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:118:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var recordingCoordinator: RecordingCoordinator?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:118:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var recordingCoordinator: RecordingCoordinator?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:131:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var frontOutputURL: URL?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:131:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var frontOutputURL: URL?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:132:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var backOutputURL: URL?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:132:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var backOutputURL: URL?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:133:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var combinedOutputURL: URL?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:133:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var combinedOutputURL: URL?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:136:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var recordingStartTime: CMTime?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:136:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var recordingStartTime: CMTime?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:137:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var isWriting = false
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:137:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var isWriting = false
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:138:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var hasReceivedFirstVideoFrame = false
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:138:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var hasReceivedFirstVideoFrame = false
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:139:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var hasReceivedFirstAudioFrame = false
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:139:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var hasReceivedFirstAudioFrame = false
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:141:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var lastVideoPTS: CMTime?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:141:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var lastVideoPTS: CMTime?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:142:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var lastAudioPTS: CMTime?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:142:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var lastAudioPTS: CMTime?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:143:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var dropAudioDuringStop = false
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/Managers/DualCameraManager.swift:143:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var dropAudioDuringStop = false
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/FrameCompositor.swift:51:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var pixelBufferPool: CVPixelBufferPool?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/FrameCompositor.swift:51:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var pixelBufferPool: CVPixelBufferPool?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/FrameCompositor.swift:62:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var isShuttingDown = false
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/FrameCompositor.swift:62:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var isShuttingDown = false
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/FrameCompositor.swift:63:10: error: Expected 'var' keyword in property declaration
+    @safe(unchecked) nonisolated(unsafe) private var lastFrontBuffer: (buffer: CVPixelBuffer, time: CMTime)?
+         ^
+         var  (in target 'DualLensPro' from project 'DualLensPro')
+/Users/iamabillionaire/Downloads/Dual_Camera_App_Concept (3)/DualLensPro/DualLensPro/FrameCompositor.swift:63:21: error: Consecutive declarations on a line must be separated by ';'
+    @safe(unchecked) nonisolated(unsafe) private var lastFrontBuffer: (buffer: CVPixelBuffer, time: CMTime)?
+                    ^
+                    ; (in target 'DualLensPro' from project 'DualLensPro')
+
+** BUILD FAILED **
+
+
+The following build commands failed:
+	SwiftDriver DualLensPro normal arm64 com.apple.xcode.tools.swift.compiler (in target 'DualLensPro' from project 'DualLensPro')
+	Building project DualLensPro with scheme DualLensPro
+(2 failures)

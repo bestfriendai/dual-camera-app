@@ -12,6 +12,7 @@ struct ZoomControl: View {
     let availableZooms: [CGFloat]
     let onZoomChange: (CGFloat) -> Void
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 12) {
@@ -19,15 +20,23 @@ struct ZoomControl: View {
                 ZoomLevelButton(
                     zoom: zoom,
                     isSelected: abs(currentZoom - zoom) < 0.01,
+                    reduceMotion: reduceMotion,
                     action: {
                         HapticManager.shared.zoomChange()
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        if reduceMotion {
                             onZoomChange(zoom)
+                        } else {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                onZoomChange(zoom)
+                            }
                         }
                     }
                 )
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Zoom control")
+        .accessibilityValue("\(String(format: "%.1f", currentZoom))x zoom")
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background {
@@ -50,6 +59,7 @@ struct ZoomControl: View {
 private struct ZoomLevelButton: View {
     let zoom: CGFloat
     let isSelected: Bool
+    let reduceMotion: Bool
     let action: () -> Void
 
     @State private var isPressed = false
@@ -68,8 +78,11 @@ private struct ZoomLevelButton: View {
                 .onChanged { _ in isPressed = true }
                 .onEnded { _ in isPressed = false }
         )
-        .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isPressed)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+        .animation(reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.7), value: isPressed)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+        .accessibilityLabel("Zoom \(zoomText)x")
+        .accessibilityHint("Double tap to set zoom to \(zoomText)x")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var zoomText: String {

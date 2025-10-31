@@ -68,13 +68,33 @@ enum OrientationDiagnostics {
         return "SampleBuffer(dimensions: \(dimensions.width)x\(dimensions.height), subtype: 0x\(String(mediaSubType, radix: 16)), timing: \(timingInfo), attachments: \(attachments))"
     }
 
-    static func logDeviceOrientation(prefix: String) {
-        let deviceOrientation = UIDevice.current.orientation
-        log("\(prefix) UIDeviceOrientation=\(deviceOrientation.rawValue) (\(deviceOrientation.debugName))")
+    static func logInterfaceOrientation(prefix: String) {
+        let interfaceOrientation = currentInterfaceOrientation()
+        log("\(prefix) UIInterfaceOrientation=\(interfaceOrientation.rawValue) (\(interfaceOrientation.debugName))")
+    }
+
+    private static func currentInterfaceOrientation() -> UIInterfaceOrientation {
+        // Get the current window scene and return interface orientation
+        let scenes = UIApplication.shared.connectedScenes
+
+        // Try to find an active foreground scene first
+        if let activeScene = scenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) {
+            return activeScene.effectiveGeometry.interfaceOrientation
+        }
+
+        // Fall back to any UIWindowScene if no active scene found
+        if let scene = scenes.compactMap({ $0 as? UIWindowScene }).first {
+            return scene.effectiveGeometry.interfaceOrientation
+        }
+
+        // Default to portrait if no scene available
+        return .portrait
     }
 }
 
-private extension UIDeviceOrientation {
+private extension UIInterfaceOrientation {
     var debugName: String {
         switch self {
         case .unknown: return "unknown"
@@ -82,8 +102,6 @@ private extension UIDeviceOrientation {
         case .portraitUpsideDown: return "portraitUpsideDown"
         case .landscapeLeft: return "landscapeLeft"
         case .landscapeRight: return "landscapeRight"
-        case .faceUp: return "faceUp"
-        case .faceDown: return "faceDown"
         @unknown default: return "unhandled"
         }
     }
@@ -95,6 +113,6 @@ enum OrientationDiagnostics {
     static func log(_ message: String, file: StaticString = #fileID, line: UInt = #line) { }
     static func describe(pixelBuffer: CVPixelBuffer) -> String { return "" }
     static func describe(sampleBuffer: CMSampleBuffer) -> String { return "" }
-    static func logDeviceOrientation(prefix: String) { }
+    static func logInterfaceOrientation(prefix: String) { }
 }
 #endif

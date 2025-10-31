@@ -15,6 +15,7 @@ struct RecordButton: View {
     @State private var isPressed = false
     @State private var pulseAnimation = false
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: {
@@ -57,15 +58,20 @@ struct RecordButton: View {
                 .onChanged { _ in isPressed = true }
                 .onEnded { _ in isPressed = false }
         )
-        .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isPressed)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isRecording)
+        .animation(reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.7), value: isPressed)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7), value: isRecording)
         .onChange(of: isRecording) { _, newValue in
-            if newValue {
+            if newValue && !reduceMotion {
                 startPulseAnimation()
             } else {
                 pulseAnimation = false
             }
         }
+        // Accessibility
+        .accessibilityLabel(isRecording ? "Stop recording" : "Start recording")
+        .accessibilityHint(isRecording ? "Double tap to stop recording" : "Double tap to start recording")
+        .accessibilityAddTraits(isRecording ? .startsMediaSession : [])
+        .accessibilityValue(isRecording ? "Recording in progress" : "Ready to record")
     }
 
     private func startPulseAnimation() {
