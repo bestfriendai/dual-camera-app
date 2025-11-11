@@ -18,12 +18,27 @@ struct SettingsView: View {
                 Section {
                     ForEach(RecordingQuality.allCases, id: \.self) { quality in
                         Button {
-                            HapticManager.shared.selection()
+                            // ✅ FIX Issue #5: Warn about 4K limitation in multi-cam mode
+                            if quality == .ultra && viewModel.cameraManager.useMultiCam {
+                                HapticManager.shared.warning()
+                                // Still allow setting, but will automatically downgrade to 1080p
+                            } else {
+                                HapticManager.shared.selection()
+                            }
                             viewModel.setRecordingQuality(quality)
                         } label: {
                             HStack {
-                                Text(quality.rawValue)
-                                    .foregroundColor(.primary)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(quality.rawValue)
+                                        .foregroundColor(.primary)
+
+                                    // Show warning for unsupported combinations
+                                    if quality == .ultra && viewModel.cameraManager.useMultiCam {
+                                        Text("Dual camera limited to 1080p")
+                                            .font(.caption)
+                                            .foregroundColor(.orange)
+                                    }
+                                }
                                 Spacer()
                                 if viewModel.recordingQuality == quality {
                                     Image(systemName: "checkmark")
@@ -39,7 +54,11 @@ struct SettingsView: View {
                 } header: {
                     Text("VIDEO QUALITY")
                 } footer: {
-                    Text("Higher quality requires more storage space")
+                    if viewModel.cameraManager.useMultiCam {
+                        Text("Multi-camera recording is limited to 1080p at 30fps per Apple hardware restrictions. Higher quality settings will be adjusted automatically.")
+                    } else {
+                        Text("Higher quality requires more storage space")
+                    }
                 }
 
                 // ASPECT RATIO
@@ -270,14 +289,28 @@ struct SettingsView: View {
                 Section {
                     ForEach(CaptureMode.allCases, id: \.self) { mode in
                         Button {
-                            HapticManager.shared.selection()
+                            // ✅ FIX Issue #5: Warn about 120fps limitation in multi-cam mode
+                            if mode == .action && viewModel.cameraManager.useMultiCam {
+                                HapticManager.shared.warning()
+                            } else {
+                                HapticManager.shared.selection()
+                            }
                             viewModel.settingsViewModel.defaultCaptureMode = mode
                         } label: {
                             HStack {
                                 Image(systemName: mode.systemIconName)
                                     .frame(width: 24)
-                                Text(mode.displayName)
-                                    .foregroundColor(.primary)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(mode.displayName)
+                                        .foregroundColor(.primary)
+
+                                    // Show warning for unsupported combinations
+                                    if mode == .action && viewModel.cameraManager.useMultiCam {
+                                        Text("Not available in dual camera mode")
+                                            .font(.caption)
+                                            .foregroundColor(.orange)
+                                    }
+                                }
                                 Spacer()
                                 if viewModel.settingsViewModel.defaultCaptureMode == mode {
                                     Image(systemName: "checkmark")
@@ -290,7 +323,11 @@ struct SettingsView: View {
                 } header: {
                     Text("DEFAULT CAPTURE MODE")
                 } footer: {
-                    Text("The mode that will be selected when app launches")
+                    if viewModel.cameraManager.useMultiCam {
+                        Text("Action mode (120fps) requires single camera mode. Switch to single camera to use high frame rate recording.")
+                    } else {
+                        Text("The mode that will be selected when app launches")
+                    }
                 }
 
                 // SUBSCRIPTION
