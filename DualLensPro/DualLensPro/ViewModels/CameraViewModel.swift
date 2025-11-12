@@ -377,6 +377,8 @@ class CameraViewModel: ObservableObject {
     }
 
     func setCaptureMode(_ mode: CaptureMode) {
+        // ✅ Play mode change sound
+        SoundManager.shared.playModeChange()
         currentCaptureMode = mode
     }
 

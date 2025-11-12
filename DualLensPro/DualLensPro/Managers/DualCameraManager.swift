@@ -681,6 +681,9 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         // Mark camera setup as complete - now safe to update zoom and other camera properties
         isCameraSetupComplete = true
         print("✅ Camera setup complete - zoom updates now enabled (will apply after session starts)")
+
+        // ✅ Initialize Center Stage state from device
+        initializeCenterStageState()
     }
 
     private func setupCamera(position: AVCaptureDevice.Position) async throws {
@@ -1308,6 +1311,11 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         let shouldCaptureFront = self.useMultiCam && self.frontPhotoOutput != nil
         let shouldCaptureBack = self.backPhotoOutput != nil
 
+        // ✅ Play shutter sound
+        await MainActor.run {
+            SoundManager.shared.playShutter()
+        }
+
         if shouldCaptureFront && shouldCaptureBack {
             // Capture both concurrently
             try await withThrowingTaskGroup(of: Void.self) { group in
@@ -1642,23 +1650,49 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             guard let self = self else { return }
             guard let device = self.frontCameraInput?.device else { return }
 
-            // Check if Center Stage is available (requires iOS 14.5+)
+            // ✅ FIX: Actually apply Center Stage to device
             if #available(iOS 14.5, *) {
-                // Center Stage is primarily available on iPad Pro with ultra-wide camera
-                // Check if the device supports it
                 do {
                     try device.lockForConfiguration()
                     defer { device.unlockForConfiguration() }
 
-                    Task { @MainActor in
-                        self.isCenterStageEnabled.toggle()
-                    }
+                    // Check if device supports Center Stage
+                    if device.isCenterStageSupported {
+                        // Toggle the actual device property
+                        device.isCenterStageEnabled.toggle()
 
-                    // Note: Center Stage is controlled via AVCaptureDevice.centerStageEnabled
-                    // but it requires specific hardware support (typically iPad Pro)
-                    // For iPhone, this may not be available
+                        // Update published state on main actor
+                        Task { @MainActor in
+                            self.isCenterStageEnabled = device.isCenterStageEnabled
+                            print("✅ Center Stage \(device.isCenterStageEnabled ? "enabled" : "disabled")")
+                        }
+                    } else {
+                        Task { @MainActor in
+                            self.errorMessage = "Center Stage not supported on this device"
+                            print("⚠️ Center Stage not supported on this device")
+                        }
+                    }
                 } catch {
-                    print("Error toggling Center Stage: \(error.localizedDescription)")
+                    print("❌ Error toggling Center Stage: \(error.localizedDescription)")
+                }
+            } else {
+                Task { @MainActor in
+                    self.errorMessage = "Center Stage requires iOS 14.5 or later"
+                }
+            }
+        }
+    }
+
+    // ✅ Initialize Center Stage state from device on setup
+    private func initializeCenterStageState() {
+        sessionQueue.async { [weak self] in
+            guard let self = self,
+                  let device = self.frontCameraInput?.device else { return }
+
+            if #available(iOS 14.5, *), device.isCenterStageSupported {
+                Task { @MainActor in
+                    self.isCenterStageEnabled = device.isCenterStageEnabled
+                    print("ℹ️ Center Stage initialized: \(device.isCenterStageEnabled)")
                 }
             }
         }
@@ -1695,6 +1729,8 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         await MainActor.run {
             recordingState = .recording
             recordingDuration = 0  // ✅ Reset timer to 0 when starting
+            // ✅ Play record start sound
+            SoundManager.shared.playRecordStart()
         }
 
         print("✅ State changed to recording, timer reset to 0")
@@ -1853,6 +1889,8 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         await MainActor.run {
             recordingState = .idle
             recordingDuration = 0
+            // ✅ Play record stop sound
+            SoundManager.shared.playRecordStop()
         }
 
         print("✅ Recording stopped successfully")
@@ -2233,6 +2271,17 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
 
     private func saveToPhotosLibrary() async throws {
         print("📸 saveToPhotosLibrary called")
+
+        // ✅ FIX: Respect user's auto-save setting
+        let shouldAutoSave = await MainActor.run {
+            UserDefaults.standard.bool(forKey: "autoSaveToLibrary")
+        }
+
+        guard shouldAutoSave else {
+            print("ℹ️ Auto-save disabled - videos saved to app directory only")
+            print("ℹ️ Access via Files app: On My iPhone > DualLensPro")
+            return
+        }
 
         do {
             try await ensurePhotosAuthorization()
