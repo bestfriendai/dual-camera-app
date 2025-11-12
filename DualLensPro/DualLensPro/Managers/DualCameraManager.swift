@@ -681,17 +681,64 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         // Mark camera setup as complete - now safe to update zoom and other camera properties
         isCameraSetupComplete = true
         print("✅ Camera setup complete - zoom updates now enabled (will apply after session starts)")
+
+        // ✅ Initialize Center Stage state from device
+        initializeCenterStageState()
     }
 
     private func setupCamera(position: AVCaptureDevice.Position) async throws {
-        // Find camera device
-        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
+        // ✅ FIX Issue #3: Use DiscoverySession to find multi-cam compatible devices
+        let deviceTypes: [AVCaptureDevice.DeviceType] = [
+            .builtInWideAngleCamera,
+            .builtInUltraWideCamera,
+            .builtInTrueDepthCamera
+        ]
+
+        let discoverySession = AVCaptureDevice.DiscoverySession(
+            deviceTypes: deviceTypes,
+            mediaType: .video,
+            position: position
+        )
+
+        guard let camera = discoverySession.devices.first else {
             throw CameraError.deviceNotFound(position)
         }
+
+        print("📸 Found camera: \(camera.deviceType.rawValue) at position \(position == .front ? "front" : "back")")
 
         // Configure camera device for optimal recording
         try camera.lockForConfiguration()
         defer { camera.unlockForConfiguration() }
+
+        // ✅ FIX: Select multi-cam compatible format if using multi-cam mode
+        if useMultiCam {
+            // Filter formats to only those that support multi-cam
+            let compatibleFormats = camera.formats.filter { format in
+                format.isMultiCamSupported
+            }
+
+            guard !compatibleFormats.isEmpty else {
+                throw CameraError.multiCamNotSupported
+            }
+
+            // Find best format: prefer 1920x1080 at 30fps for multi-cam (Apple's documented limit)
+            let preferredFormat = compatibleFormats.first { format in
+                let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                return dimensions.width == 1920 && dimensions.height == 1080
+            } ?? compatibleFormats[0]
+
+            // Set the format
+            camera.activeFormat = preferredFormat
+
+            let dimensions = CMVideoFormatDescriptionGetDimensions(preferredFormat.formatDescription)
+            print("✅ Selected multi-cam format: \(dimensions.width)x\(dimensions.height)")
+
+            // Set frame rate to 30fps max for multi-cam
+            let frameDuration = CMTime(value: 1, timescale: 30)
+            camera.activeVideoMinFrameDuration = frameDuration
+            camera.activeVideoMaxFrameDuration = frameDuration
+            print("✅ Set frame rate to 30fps for multi-cam mode")
+        }
 
         // For front camera, set to minimum zoom for widest field of view
         if position == .front {
@@ -704,8 +751,10 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             camera.automaticallyAdjustsVideoHDREnabled = true
         }
 
-        // ✅ FIX Issue #8: Set frame rate with device capability verification
-        try await configureFrameRate(for: camera, mode: captureMode)
+        // ✅ FIX Issue #8: Set frame rate with device capability verification (only for single-cam)
+        if !useMultiCam {
+            try await configureFrameRate(for: camera, mode: captureMode)
+        }
 
         // NOTE: Do NOT set zoom here - it will be set after setup is complete via the zoom properties
         // Setting zoom during init can cause issues with didSet observers
@@ -1262,6 +1311,11 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         let shouldCaptureFront = self.useMultiCam && self.frontPhotoOutput != nil
         let shouldCaptureBack = self.backPhotoOutput != nil
 
+        // ✅ Play shutter sound
+        await MainActor.run {
+            SoundManager.shared.playShutter()
+        }
+
         if shouldCaptureFront && shouldCaptureBack {
             // Capture both concurrently
             try await withThrowingTaskGroup(of: Void.self) { group in
@@ -1596,23 +1650,49 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
             guard let self = self else { return }
             guard let device = self.frontCameraInput?.device else { return }
 
-            // Check if Center Stage is available (requires iOS 14.5+)
+            // ✅ FIX: Actually apply Center Stage to device
             if #available(iOS 14.5, *) {
-                // Center Stage is primarily available on iPad Pro with ultra-wide camera
-                // Check if the device supports it
                 do {
                     try device.lockForConfiguration()
                     defer { device.unlockForConfiguration() }
 
-                    Task { @MainActor in
-                        self.isCenterStageEnabled.toggle()
-                    }
+                    // Check if device supports Center Stage
+                    if device.isCenterStageSupported {
+                        // Toggle the actual device property
+                        device.isCenterStageEnabled.toggle()
 
-                    // Note: Center Stage is controlled via AVCaptureDevice.centerStageEnabled
-                    // but it requires specific hardware support (typically iPad Pro)
-                    // For iPhone, this may not be available
+                        // Update published state on main actor
+                        Task { @MainActor in
+                            self.isCenterStageEnabled = device.isCenterStageEnabled
+                            print("✅ Center Stage \(device.isCenterStageEnabled ? "enabled" : "disabled")")
+                        }
+                    } else {
+                        Task { @MainActor in
+                            self.errorMessage = "Center Stage not supported on this device"
+                            print("⚠️ Center Stage not supported on this device")
+                        }
+                    }
                 } catch {
-                    print("Error toggling Center Stage: \(error.localizedDescription)")
+                    print("❌ Error toggling Center Stage: \(error.localizedDescription)")
+                }
+            } else {
+                Task { @MainActor in
+                    self.errorMessage = "Center Stage requires iOS 14.5 or later"
+                }
+            }
+        }
+    }
+
+    // ✅ Initialize Center Stage state from device on setup
+    private func initializeCenterStageState() {
+        sessionQueue.async { [weak self] in
+            guard let self = self,
+                  let device = self.frontCameraInput?.device else { return }
+
+            if #available(iOS 14.5, *), device.isCenterStageSupported {
+                Task { @MainActor in
+                    self.isCenterStageEnabled = device.isCenterStageEnabled
+                    print("ℹ️ Center Stage initialized: \(device.isCenterStageEnabled)")
                 }
             }
         }
@@ -1626,9 +1706,13 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
     // MARK: - Recording Control
     func startRecording() async throws {
         print("🎥 startRecording called, current state: \(recordingState)")
+
+        // ✅ FIX Issue #4: Throw error instead of silently returning to surface race conditions
         guard recordingState == .idle else {
-            print("❌ Not idle, returning")
-            return
+            let message = "Recording already in progress"
+            print("❌ \(message)")
+            await MainActor.run { errorMessage = message }
+            throw CameraError.alreadyRecording
         }
 
         // Clear any pending tasks from previous recording
@@ -1645,6 +1729,8 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         await MainActor.run {
             recordingState = .recording
             recordingDuration = 0  // ✅ Reset timer to 0 when starting
+            // ✅ Play record start sound
+            SoundManager.shared.playRecordStart()
         }
 
         print("✅ State changed to recording, timer reset to 0")
@@ -1803,6 +1889,8 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
         await MainActor.run {
             recordingState = .idle
             recordingDuration = 0
+            // ✅ Play record stop sound
+            SoundManager.shared.playRecordStop()
         }
 
         print("✅ Recording stopped successfully")
@@ -2183,6 +2271,17 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
 
     private func saveToPhotosLibrary() async throws {
         print("📸 saveToPhotosLibrary called")
+
+        // ✅ FIX: Respect user's auto-save setting
+        let shouldAutoSave = await MainActor.run {
+            UserDefaults.standard.bool(forKey: "settings.autoSaveToLibrary")
+        }
+
+        guard shouldAutoSave else {
+            print("ℹ️ Auto-save disabled - videos saved to app directory only")
+            print("ℹ️ Access via Files app: On My iPhone > DualLensPro")
+            return
+        }
 
         do {
             try await ensurePhotosAuthorization()
@@ -2687,6 +2786,7 @@ extension DualCameraManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCap
 enum CameraError: LocalizedError {
     case setupInProgress
     case multiCamNotSupported
+    case alreadyRecording
     case deviceNotFound(AVCaptureDevice.Position)
     case cannotAddInput(AVCaptureDevice.Position)
     case cannotAddOutput(AVCaptureDevice.Position)
@@ -2710,6 +2810,8 @@ enum CameraError: LocalizedError {
             return "Camera setup is already in progress"
         case .multiCamNotSupported:
             return "Multi-camera recording is not supported on this device"
+        case .alreadyRecording:
+            return "Recording is already in progress"
         case .deviceNotFound(let position):
             return "Camera not found for position: \(position)"
         case .cannotAddInput(let position):
@@ -2811,22 +2913,29 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate, @un
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        defer { onComplete(nil) }  // Always clean up delegate after resuming
+        // ✅ FIX: Don't call onComplete(nil) in defer block - it clears the buffer before compositing
+        // The completion handler should only be called AFTER successfully saving the photo
 
         if let error = error {
+            print("❌ [PhotoCaptureDelegate] Photo capture error: \(error.localizedDescription)")
             resumeOnce(.failure(error))
             return
         }
 
         guard let imageData = photo.fileDataRepresentation() else {
+            print("❌ [PhotoCaptureDelegate] Failed to get image data representation")
             resumeOnce(.failure(CameraError.photoOutputNotConfigured))
             return
         }
 
+        print("✅ [PhotoCaptureDelegate] Photo captured for \(cameraName), size: \(imageData.count) bytes")
+
         // Add timeout protection to prevent hanging (10 seconds)
         let timeoutTask = Task {
             try? await Task.sleep(nanoseconds: 10_000_000_000) // 10 seconds
+            print("⏱️ [PhotoCaptureDelegate] Photo save timeout for \(self.cameraName)")
             self.resumeOnce(.failure(CameraError.photoSaveTimeout))
+            // Don't call onComplete on timeout - let the caller handle cleanup
         }
 
         // Save to Photos library
@@ -2837,17 +2946,24 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate, @un
             timeoutTask.cancel()  // Cancel timeout if we complete in time
 
             if let error = error {
+                print("❌ [PhotoCaptureDelegate] Photo save error: \(error.localizedDescription)")
                 self.resumeOnce(.failure(error))
+                // Don't call onComplete on error - data won't be saved anyway
             } else if success {
-                // Pass photo data to completion handler for combined photo
+                print("✅ [PhotoCaptureDelegate] Photo saved to library for \(self.cameraName)")
+
+                // ✅ CRITICAL: Pass photo data to completion handler for combined photo
+                // This MUST happen before resuming, so the compositor can access both buffers
                 self.onComplete(imageData)
 
                 // Notify UI to refresh gallery thumbnail
                 Task { @MainActor in
                     NotificationCenter.default.post(name: .init("RefreshGalleryThumbnail"), object: nil)
                 }
+
                 self.resumeOnce(.success(()))
             } else {
+                print("❌ [PhotoCaptureDelegate] Photo save failed without error")
                 self.resumeOnce(.failure(CameraError.photoOutputNotConfigured))
             }
         }

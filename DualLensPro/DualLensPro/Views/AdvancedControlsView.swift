@@ -146,6 +146,11 @@ struct AdvancedControlsView: View {
             RoundedRectangle(cornerRadius: 24)
                 .stroke(.white.opacity(0.1), lineWidth: 1)
         )
+        // ✅ FIX Issue #8: Initialize state from camera manager when view appears
+        .onAppear {
+            // Load current exposure value from camera manager
+            exposureValue = viewModel.cameraManager.exposureValue
+        }
     }
 }
 

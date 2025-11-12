@@ -187,7 +187,7 @@ final class DeviceMonitorService: NSObject, @unchecked Sendable {
     }
 
     /// Check if thermal state allows recording
-    func canStartRecording() -> (allowed: Bool, reason: String?) {
+    func canStartRecordingThermal() -> (allowed: Bool, reason: String?) {
         switch thermalState {
         case .nominal, .fair:
             return (true, nil)
@@ -201,7 +201,7 @@ final class DeviceMonitorService: NSObject, @unchecked Sendable {
     }
 
     /// Check if recording should be stopped due to thermal state
-    func shouldStopRecording() -> (stop: Bool, reason: String?) {
+    func shouldStopRecordingThermal() -> (stop: Bool, reason: String?) {
         switch thermalState {
         case .serious:
             return (true, "Recording stopped - device is overheating")
@@ -391,7 +391,7 @@ final class DeviceMonitorService: NSObject, @unchecked Sendable {
     func canStartRecording() -> (allowed: Bool, reasons: [String]) {
         var reasons: [String] = []
 
-        let thermal = canStartRecording()
+        let thermal = canStartRecordingThermal()
         if !thermal.allowed, let reason = thermal.reason {
             reasons.append(reason)
         }
@@ -414,7 +414,7 @@ final class DeviceMonitorService: NSObject, @unchecked Sendable {
         var reasons: [String] = []
         var warnings: [String] = []
 
-        let thermal = shouldStopRecording()
+        let thermal = shouldStopRecordingThermal()
         if thermal.stop, let reason = thermal.reason {
             reasons.append(reason)
         }
