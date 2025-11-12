@@ -2274,7 +2274,7 @@ class DualCameraManager: NSObject, ObservableObject /* TODO: Add DeviceMonitorDe
 
         // ✅ FIX: Respect user's auto-save setting
         let shouldAutoSave = await MainActor.run {
-            UserDefaults.standard.bool(forKey: "autoSaveToLibrary")
+            UserDefaults.standard.bool(forKey: "settings.autoSaveToLibrary")
         }
 
         guard shouldAutoSave else {

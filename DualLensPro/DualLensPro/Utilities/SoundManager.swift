@@ -14,7 +14,7 @@ final class SoundManager {
     static let shared = SoundManager()
 
     private var soundsEnabled: Bool {
-        UserDefaults.standard.bool(forKey: "soundEffectsEnabled")
+        UserDefaults.standard.bool(forKey: "settings.soundEffects")
     }
 
     // iOS System Sound IDs for camera-related actions
